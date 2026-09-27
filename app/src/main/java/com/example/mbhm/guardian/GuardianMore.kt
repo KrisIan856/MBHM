@@ -339,19 +339,16 @@ fun GMore(onLogout: () -> Unit, showToast: (String) -> Unit) {
         if (showLogoutDialog) {
             AlertDialog(
                 onDismissRequest = { showLogoutDialog = false },
-                title = { Text("Sign Out", color = C.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold) },
-                text = { Text("Are you sure you want to sign out?", color = C.text, fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp)) },
+                title = { Text("Sign Out") },
+                text = { Text("Are you sure you want to sign out?") },
                 confirmButton = {
-                    Button(
-                        onClick = { onLogout(); showLogoutDialog = false },
-                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = C.danger)
-                    ) {
-                        Text("Yes", color = androidx.compose.ui.graphics.Color.White, fontWeight = FontWeight.SemiBold)
+                    Button(onClick = { onLogout(); showLogoutDialog = false }) {
+                        Text("Yes")
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showLogoutDialog = false }) {
-                        Text("Cancel", color = C.primary, fontWeight = FontWeight.SemiBold)
+                        Text("Cancel")
                     }
                 }
             )

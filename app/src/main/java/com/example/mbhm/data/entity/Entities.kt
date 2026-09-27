@@ -1,4 +1,4 @@
-package com.example.mbhm.data.entity
+﻿package com.example.mbhm.data.entity
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
@@ -254,8 +254,8 @@ data class AnnouncementEntity(
         recipients = Converters.stringToList(recipients),
         sentAt = sentAt,
         sentBy = sentBy,
-        readBy = Converters.stringToList(readBy)!!,
-        acknowledgedBy = Converters.stringToList(acknowledgedBy)!!
+readBy = Converters.stringToList(readBy) ?: emptyList(),
+            acknowledgedBy = Converters.stringToList(acknowledgedBy) ?: emptyList()
     )
 
     companion object {

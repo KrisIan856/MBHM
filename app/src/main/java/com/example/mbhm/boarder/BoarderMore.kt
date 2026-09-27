@@ -1,4 +1,4 @@
-package com.example.mbhm.boarder
+﻿package com.example.mbhm.boarder
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -125,7 +125,7 @@ fun BMore(
                     LeaveNoticeCard(notice)
                 }
                 if (leaveNoticeList.isEmpty()) {
-                    EmptyState(icon = "📅", title = "No leave notices filed yet")
+                    EmptyState(icon = "ðŸ“…", title = "No leave notices filed yet")
                 }
             }
         }
@@ -226,7 +226,7 @@ fun BMore(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        "✏ Edit",
+                        "âœ Edit",
                         color = C.primary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
@@ -393,7 +393,7 @@ fun BMore(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    "Room ${currentBoarder.room} · ${currentBoarder.job}",
+                    "Room ${currentBoarder.room} Â· ${currentBoarder.job}",
                     color = C.muted,
                     fontSize = 14.sp,
                     modifier = Modifier.padding(top = 2.dp)
@@ -405,24 +405,24 @@ fun BMore(
                     modifier = Modifier.padding(top = 2.dp)
                 )
             }
-            Text("View →", color = C.primary, fontSize = 14.sp)
+            Text("View â†’", color = C.primary, fontSize = 14.sp)
         }
 
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             RowItem(
-                icon = "📅",
+                icon = "ðŸ“…",
                 label = "Leave Notice",
                 sub = "Submit leave notice & view statuses",
                 onClick = { screen = "leave_history" }
             )
             RowItem(
-                icon = "👤",
+                icon = "ðŸ‘¤",
                 label = "Profile & Contacts",
                 sub = "Emergency & Guardian contact info",
                 onClick = { screen = "profile" }
             )
             RowItem(
-                icon = "⚙️",
+                icon = "âš™ï¸",
                 label = "Settings",
                 sub = "App preferences & notifications",
                 onClick = { screen = "settings" }
@@ -448,19 +448,16 @@ fun BMore(
         if (showLogoutDialog) {
             AlertDialog(
                 onDismissRequest = { showLogoutDialog = false },
-                title = { Text("Sign Out", color = C.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold) },
-                text = { Text("Are you sure you want to sign out?", color = C.text, fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp)) },
+                title = { Text("Sign Out") },
+                text = { Text("Are you sure you want to sign out?") },
                 confirmButton = {
-                    Button(
-                        onClick = { onLogout(); showLogoutDialog = false },
-                        colors = ButtonDefaults.buttonColors(containerColor = C.danger)
-                    ) {
-                        Text("Yes", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    Button(onClick = { onLogout(); showLogoutDialog = false }) {
+                        Text("Yes")
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showLogoutDialog = false }) {
-                        Text("Cancel", color = C.primary, fontWeight = FontWeight.SemiBold)
+                        Text("Cancel")
                     }
                 }
             )
@@ -675,11 +672,11 @@ fun LeaveNoticeCard(notice: LeaveNotice) {
         ) {
             Column {
                 Text("Departure", color = C.muted, fontSize = 11.sp)
-                Text("${notice.leaveDate} · ${notice.expectedDepartureTime}", color = C.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text("${notice.leaveDate} Â· ${notice.expectedDepartureTime}", color = C.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text("Expected Return", color = C.muted, fontSize = 11.sp)
-                Text("${notice.expectedReturnDate} · ${notice.expectedReturnTime}", color = C.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text("${notice.expectedReturnDate} Â· ${notice.expectedReturnTime}", color = C.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
         }
 

@@ -531,10 +531,15 @@ private fun GAttn_Override(
     showToast: (String) -> Unit,
     onBack: () -> Unit
 ) {
-    var boarderId by remember { mutableStateOf(boarders[0].id) }
-    var sessionId by remember { mutableStateOf(sessions[0].id) }
+    var boarderId by remember(boarders) { mutableStateOf(boarders.firstOrNull()?.id ?: "") }
+    var sessionId by remember(sessions) { mutableStateOf(sessions.firstOrNull()?.id ?: "") }
     var status by remember { mutableStateOf("present") }
     var reason by remember { mutableStateOf("") }
+
+    if (boarders.isEmpty() || sessions.isEmpty()) {
+        EmptyState(icon = "📅", title = "No boarders or sessions yet")
+        return
+    }
 
     fun submit() {
         val existing = records.find { r -> r.boarderId == boarderId && r.sessionId == sessionId }

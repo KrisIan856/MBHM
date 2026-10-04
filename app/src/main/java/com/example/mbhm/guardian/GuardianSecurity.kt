@@ -66,6 +66,10 @@ fun GSecurity(
         GSec_Contacts(boarders, setBoarders, showToast, onBack = { nav("overview") })
         return
     }
+    if (screen == "boarders") {
+        GSec_BoardersList(boarders, setBoarders, showToast, onBack = { nav("overview") })
+        return
+    }
     if (screen == "announcements") {
         GSec_Announcements(boarders, announcements, setAnnouncements, showToast, onBack = { nav("overview") })
         return
@@ -464,6 +468,119 @@ private fun GSec_Contacts(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GSec_BoardersList(
+    boarders: List<Boarder>,
+    setBoarders: (List<Boarder>) -> Unit,
+    showToast: (String) -> Unit,
+    onBack: () -> Unit
+) {
+    var editingId by remember { mutableStateOf<String?>(null) }
+    var editRoom by remember { mutableStateOf("") }
+    var editFloor by remember { mutableStateOf("") }
+
+    fun startEdit(b: Boarder) {
+        editingId = b.id
+        editRoom = b.room
+        editFloor = b.floor
+    }
+
+    fun saveEdit() {
+        val b = boarders.find { it.id == editingId }
+        if (b != null) {
+            setBoarders(
+                boarders.map {
+                    if (it.id == editingId) {
+                        it.copy(room = editRoom.trim(), floor = editFloor.trim())
+                    } else it
+                }
+            )
+            editingId = null
+            showToast("Room assignment updated for ${b.name}")
+        }
+    }
+
+    Column(Modifier.fillMaxSize().background(C.bg)) {
+        Header(title = "Boarders List", onBack = onBack)
+        ScrollBody(modifier = Modifier.weight(1f), spacing = 12) {
+            Text(
+                "${boarders.size} boarders registered",
+                color = C.muted,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            boarders.forEach { b ->
+                PCard {
+                    Column(Modifier.fillMaxWidth()) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Avatar(initials = b.initials, color = b.avatarColor)
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    b.name,
+                                    color = C.text,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text("Room ${b.room} · ${b.job}", color = C.muted, fontSize = 12.sp)
+                            }
+                            Text(
+                                if (editingId == b.id) "Save" else "✏ Edit",
+                                color = C.primary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.clickable {
+                                    if (editingId == b.id) {
+                                        if (editRoom.isNotBlank()) {
+                                            saveEdit()
+                                        } else {
+                                            showToast("Room number is required")
+                                        }
+                                    } else {
+                                        startEdit(b)
+                                    }
+                                }
+                            )
+                        }
+
+                        if (editingId == b.id) {
+                            HorizontalDivider(thickness = 1.dp, color = C.border)
+                            Column(
+                                Modifier.fillMaxWidth().padding(top = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Input(
+                                    label = "Room Number",
+                                    value = editRoom,
+                                    onChange = { editRoom = it }
+                                )
+                                Input(
+                                    label = "Floor",
+                                    value = editFloor,
+                                    onChange = { editFloor = it }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (boarders.isEmpty()) {
+                Box(
+                    Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("No boarders registered yet", color = C.muted, fontSize = 14.sp)
                 }
             }
         }

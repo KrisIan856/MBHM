@@ -38,10 +38,6 @@ fun MbhmApp() {
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
-        appRepository.initializeSampleData()
-    }
-
     var authenticatedUser by remember { mutableStateOf<UserEntity?>(null) }
     var sessionToastMsg by remember { mutableStateOf<String?>(null) }
 
@@ -103,10 +99,14 @@ fun MbhmApp() {
                     sessionManager.clearSession()
                     authenticatedUser = null
                 })
-                Role.BOARDER -> BoarderApp(onLogout = {
-                    sessionManager.clearSession()
-                    authenticatedUser = null
-                })
+                Role.BOARDER -> BoarderApp(
+                    user = user,
+                    appRepository = appRepository,
+                    onLogout = {
+                        sessionManager.clearSession()
+                        authenticatedUser = null
+                    }
+                )
             }
         }
 

@@ -24,6 +24,9 @@ interface BoarderDao {
     @Query("SELECT * FROM boarders ORDER BY name")
     fun getAll(): Flow<List<BoarderEntity>>
 
+    @Query("SELECT * FROM boarders ORDER BY name")
+    suspend fun getAllOnce(): List<BoarderEntity>
+
     @Query("SELECT * FROM boarders WHERE id = :id")
     suspend fun getById(id: String): BoarderEntity?
 
@@ -57,6 +60,9 @@ interface PaymentRecordDao {
     @Query("SELECT * FROM payment_records ORDER BY period DESC")
     fun getAll(): Flow<List<PaymentRecordEntity>>
 
+    @Query("SELECT * FROM payment_records ORDER BY period DESC")
+    suspend fun getAllOnce(): List<PaymentRecordEntity>
+
     @Query("SELECT * FROM payment_records WHERE boarderId = :boarderId ORDER BY period DESC")
     fun getByBoarder(boarderId: String): Flow<List<PaymentRecordEntity>>
 
@@ -89,6 +95,9 @@ interface AttendanceSessionDao {
 
     @Query("SELECT * FROM attendance_sessions ORDER BY date DESC")
     fun getAll(): Flow<List<AttendanceSessionEntity>>
+
+    @Query("SELECT * FROM attendance_sessions ORDER BY date DESC")
+    suspend fun getAllOnce(): List<AttendanceSessionEntity>
 
     @Query("SELECT * FROM attendance_sessions WHERE id = :id")
     suspend fun getById(id: String): AttendanceSessionEntity?
@@ -125,6 +134,12 @@ interface AttendanceRecordDao {
 
     @Query("SELECT * FROM attendance_records WHERE boarderId = :boarderId AND sessionId = :sessionId")
     suspend fun getByBoarderAndSession(boarderId: String, sessionId: String): AttendanceRecordEntity?
+
+    @Query("SELECT * FROM attendance_records ORDER BY sessionId DESC")
+    fun getAll(): Flow<List<AttendanceRecordEntity>>
+
+    @Query("SELECT * FROM attendance_records ORDER BY sessionId DESC")
+    suspend fun getAllOnce(): List<AttendanceRecordEntity>
 }
 
 @Dao
@@ -146,6 +161,9 @@ interface AnnouncementDao {
 
     @Query("SELECT * FROM announcements ORDER BY sentAt DESC")
     fun getAll(): Flow<List<AnnouncementEntity>>
+
+    @Query("SELECT * FROM announcements ORDER BY sentAt DESC")
+    suspend fun getAllOnce(): List<AnnouncementEntity>
 
     @Query("SELECT * FROM announcements WHERE priority = :priority ORDER BY sentAt DESC")
     fun getByPriority(priority: String): Flow<List<AnnouncementEntity>>
@@ -204,6 +222,9 @@ interface IncidentDao {
     @Query("SELECT * FROM incidents ORDER BY timestamp DESC")
     fun getAll(): Flow<List<IncidentEntity>>
 
+    @Query("SELECT * FROM incidents ORDER BY timestamp DESC")
+    suspend fun getAllOnce(): List<IncidentEntity>
+
     @Query("SELECT * FROM incidents WHERE boarderId = :boarderId ORDER BY timestamp DESC")
     fun getByBoarder(boarderId: String): Flow<List<IncidentEntity>>
 
@@ -233,6 +254,9 @@ interface MaintenanceReportDao {
 
     @Query("SELECT * FROM maintenance_reports ORDER BY submittedAt DESC")
     fun getAll(): Flow<List<MaintenanceReportEntity>>
+
+    @Query("SELECT * FROM maintenance_reports ORDER BY submittedAt DESC")
+    suspend fun getAllOnce(): List<MaintenanceReportEntity>
 
     @Query("SELECT * FROM maintenance_reports WHERE boarderId = :boarderId ORDER BY submittedAt DESC")
     fun getByBoarder(boarderId: String): Flow<List<MaintenanceReportEntity>>
@@ -269,7 +293,15 @@ interface CurfewRecordDao {
 
     @Query("SELECT * FROM curfew_records WHERE status = :status")
     fun getByStatus(status: String): Flow<List<CurfewRecordEntity>>
+
+    @Query("SELECT * FROM curfew_records ORDER BY date DESC")
+    fun getAll(): Flow<List<CurfewRecordEntity>>
+
+    @Query("SELECT * FROM curfew_records ORDER BY date DESC")
+    suspend fun getAllOnce(): List<CurfewRecordEntity>
 }
+
+
 
 @Dao
 interface WorshipScheduleDao {

@@ -24,8 +24,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -46,10 +44,15 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.mbhm.R
 import com.example.mbhm.data.entity.UserEntity
 import com.example.mbhm.data.repository.AppRepository
+import com.example.mbhm.model.BoarderDetails
+import com.example.mbhm.model.GuardianDetails
 import com.example.mbhm.model.Role
 import com.example.mbhm.ui.components.C
+import com.example.mbhm.ui.components.PrimaryButton
+import com.example.mbhm.ui.components.Screen
 import kotlinx.coroutines.launch
 
 private enum class AuthMode {
@@ -114,7 +117,6 @@ fun AuthScreen(
                     mode = AuthMode.FORGOT
                 }
             )
-
             AuthMode.REGISTER -> RegisterScreenContent(
                 apiError = errorMsg,
                 onBack = {
@@ -122,11 +124,12 @@ fun AuthScreen(
                     infoMsg = null
                     mode = AuthMode.LOGIN
                 },
-                onRegister = { username, password, role ->
+                onRegister = { username, password, guardianDetails, boarderDetails, isGuardian ->
                     errorMsg = null
                     infoMsg = null
                     scope.launch {
-                        val newUser = appRepository.registerUser(username, password, role)
+                        val role = if (isGuardian) Role.GUARDIAN else Role.BOARDER
+                        val newUser = appRepository.registerUser(username, password, role, guardianDetails, boarderDetails)
                         if (newUser != null) {
                             onLoginSuccess(newUser)
                         } else {
@@ -135,16 +138,10 @@ fun AuthScreen(
                     }
                 }
             )
-
             AuthMode.FORGOT -> ForgotScreenContent(
                 onBack = {
                     errorMsg = null
                     infoMsg = null
-                    mode = AuthMode.LOGIN
-                },
-                onSubmit = { username ->
-                    errorMsg = null
-                    infoMsg = "Password reset instructions sent for $username"
                     mode = AuthMode.LOGIN
                 }
             )
@@ -184,9 +181,7 @@ private fun LoginScreenContent(
             ) {
                 Text("🏠", fontSize = 32.sp)
             }
-
             Spacer(Modifier.height(16.dp))
-
             Text(
                 text = "BOARDING HOUSE MANAGEMENT",
                 fontSize = 18.sp,
@@ -194,9 +189,7 @@ private fun LoginScreenContent(
                 color = C.text,
                 letterSpacing = 0.5.sp
             )
-
             Spacer(Modifier.height(32.dp))
-
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -206,7 +199,6 @@ private fun LoginScreenContent(
                     value = username,
                     onValueChange = { username = it }
                 )
-
                 AuthField(
                     label = "PASSWORD",
                     value = password,
@@ -224,7 +216,6 @@ private fun LoginScreenContent(
                         color = C.sage
                     )
                 }
-
                 if (!error.isNullOrEmpty()) {
                     Text(
                         text = error,
@@ -259,7 +250,6 @@ private fun LoginScreenContent(
                             color = C.text
                         )
                     }
-
                     Text(
                         text = "Forgot password?",
                         fontSize = 14.sp,
@@ -314,14 +304,16 @@ private fun LoginScreenContent(
 private fun RegisterScreenContent(
     apiError: String?,
     onBack: () -> Unit,
-    onRegister: (String, String, Role) -> Unit
+    onRegister: (String, String, GuardianDetails?, BoarderDetails?, Boolean) -> Unit
 ) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
-    var selectedRole by remember { mutableStateOf(Role.BOARDER) }
     var formError by remember { mutableStateOf<String?>(null) }
+    var guardianDetails by remember { mutableStateOf(GuardianDetails()) }
+    var boarderDetails by remember { mutableStateOf(BoarderDetails()) }
+    var registerAsGuardian by remember { mutableStateOf(false) }
 
     val reqLen = password.length >= 6
     val reqUpper = password.any { it.isUpperCase() }
@@ -345,25 +337,45 @@ private fun RegisterScreenContent(
             color = C.primary,
             modifier = Modifier.clickable { onBack() }
         )
-
         Spacer(Modifier.height(16.dp))
-
         Text(
-            text = "Create account",
+            text = "Create Account",
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
             color = C.text
         )
+        Spacer(Modifier.height(16.dp))
 
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            RoleOption(
+                label = "Boarder",
+                icon = "👤",
+                selected = !registerAsGuardian,
+                onClick = { registerAsGuardian = false },
+                modifier = Modifier.weight(1f)
+            )
+            RoleOption(
+                label = "Guardian",
+                icon = "🛡️",
+                selected = registerAsGuardian,
+                onClick = { registerAsGuardian = true },
+                modifier = Modifier.weight(1f)
+            )
+        }
         Spacer(Modifier.height(20.dp))
-
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text(
+                text = "ACCOUNT CREDENTIALS",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = C.muted,
+                letterSpacing = 0.5.sp
+            )
             AuthField(
                 label = "USERNAME",
                 value = username,
                 onValueChange = { username = it }
             )
-
             AuthField(
                 label = "PASSWORD",
                 value = password,
@@ -372,7 +384,6 @@ private fun RegisterScreenContent(
                 showPassword = showPassword,
                 onTogglePassword = { showPassword = !showPassword }
             )
-
             AuthField(
                 label = "CONFIRM PASSWORD",
                 value = confirm,
@@ -381,158 +392,328 @@ private fun RegisterScreenContent(
                 showPassword = showPassword,
                 onTogglePassword = { showPassword = !showPassword }
             )
+        }
 
-            // Password strength card
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(C.card)
-                    .border(1.dp, C.border, RoundedCornerShape(14.dp))
-                    .padding(14.dp)
-            ) {
-                val (strengthText, strengthColor) = when {
-                    strengthScore == 6 -> "Strong" to C.sage
-                    strengthScore >= 3 -> "Medium" to C.warn
-                    else -> "Weak" to Color(0xFFD94F4F)
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "PASSWORD STRENGTH",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = C.muted
-                    )
-                    Text(
-                        text = strengthText,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = strengthColor
-                    )
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(CircleShape)
-                        .background(C.bg)
-                ) {
-                    val progressFraction = strengthScore / 6f
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(progressFraction)
-                            .height(6.dp)
-                            .clip(CircleShape)
-                            .background(strengthColor)
-                    )
-                }
-
-                Spacer(Modifier.height(10.dp))
-
-                RequirementItem("At least 6 characters", reqLen)
-                RequirementItem("One uppercase letter", reqUpper)
-                RequirementItem("One lowercase letter", reqLower)
-                RequirementItem("One number", reqDigit)
-                RequirementItem("One special character", reqSpecial)
-                RequirementItem("Passwords match", reqMatch)
-            }
-
-            Spacer(Modifier.height(4.dp))
-
+        Spacer(Modifier.height(20.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(
-                text = "I AM A",
+                text = if (registerAsGuardian) "GUARDIAN DETAILS" else "BOARDER DETAILS",
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
-                color = C.muted
+                color = C.muted,
+                letterSpacing = 0.5.sp
             )
+            if (registerAsGuardian) {
+                AuthField(
+                    label = "Full Name",
+                    value = guardianDetails.fullName,
+                    onValueChange = { guardianDetails = guardianDetails.copy(fullName = it) },
+                    placeholder = "Full name"
+                )
+                AuthField(
+                    label = "Phone Number",
+                    value = guardianDetails.phone,
+                    onValueChange = { guardianDetails = guardianDetails.copy(phone = it) },
+                    keyboardType = KeyboardType.Phone,
+                    placeholder = "0917XXXXXX"
+                )
+                AuthField(
+                    label = "House Name / Number",
+                    value = guardianDetails.houseName,
+                    onValueChange = { guardianDetails = guardianDetails.copy(houseName = it) },
+                    placeholder = "e.g. House 12, Brgy. San Antonio"
+                )
+                AuthField(
+                    label = "House Address",
+                    value = guardianDetails.houseAddress,
+                    onValueChange = { guardianDetails = guardianDetails.copy(houseAddress = it) },
+                    placeholder = "Full address"
+                )
+            } else {
+                AuthField(
+                    label = "Full Name",
+                    value = boarderDetails.name.ifEmpty { "Enter name" },
+                    onValueChange = { boarderDetails = boarderDetails.copy(name = it) },
+                    placeholder = "Full name"
+                )
+                AuthField(
+                    label = "Room",
+                    value = boarderDetails.room,
+                    onValueChange = { boarderDetails = boarderDetails.copy(room = it) },
+                    placeholder = "e.g. 101"
+                )
+                AuthField(
+                    label = "Floor",
+                    value = boarderDetails.floor,
+                    onValueChange = { boarderDetails = boarderDetails.copy(floor = it) },
+                    placeholder = "e.g. 1st Floor"
+                )
+                AuthField(
+                    label = "Phone Number",
+                    value = boarderDetails.phone,
+                    onValueChange = { boarderDetails = boarderDetails.copy(phone = it) },
+                    keyboardType = KeyboardType.Phone,
+                    placeholder = "0917XXXXXX"
+                )
+                AuthField(
+                    label = "Email Address",
+                    value = boarderDetails.email,
+                    onValueChange = { boarderDetails = boarderDetails.copy(email = it) },
+                    keyboardType = KeyboardType.Email,
+                    placeholder = "boarder@email.com"
+                )
+                AuthField(
+                    label = "Join Date",
+                    value = boarderDetails.joinDate,
+                    onValueChange = { boarderDetails = boarderDetails.copy(joinDate = it) },
+                    placeholder = "e.g. Sep 15, 2026"
+                )
+                AuthField(
+                    label = "Monthly Rate (₱)",
+                    value = boarderDetails.monthlyRate,
+                    onValueChange = { boarderDetails = boarderDetails.copy(monthlyRate = it) },
+                    keyboardType = KeyboardType.Number,
+                    placeholder = "e.g. 5000"
+                )
+                AuthField(
+                    label = "Due Day (1-28)",
+                    value = boarderDetails.dueDay,
+                    onValueChange = { boarderDetails = boarderDetails.copy(dueDay = it) },
+                    keyboardType = KeyboardType.Number,
+                    placeholder = "e.g. 5"
+                )
+                AuthField(
+                    label = "Job / Occupation",
+                    value = boarderDetails.job,
+                    onValueChange = { boarderDetails = boarderDetails.copy(job = it) },
+                    placeholder = "e.g. Student"
+                )
+            }
+        }
 
-            RoleOptionCard(
-                role = Role.GUARDIAN,
-                emoji = "👩‍💼",
-                bg = C.primaryLt,
-                title = "Guardian",
-                sub = "Manage boarders & house operations",
-                selected = selectedRole == Role.GUARDIAN,
-                onClick = { selectedRole = Role.GUARDIAN }
-            )
-
-            RoleOptionCard(
-                role = Role.BOARDER,
-                emoji = "🧑‍🎓",
-                bg = Color(0xFFE4EDE3),
-                title = "Boarder",
-                sub = "View your room & payment details",
-                selected = selectedRole == Role.BOARDER,
-                onClick = { selectedRole = Role.BOARDER }
-            )
-
-            val displayError = formError ?: apiError
-            if (!displayError.isNullOrEmpty()) {
+        Spacer(Modifier.height(20.dp))
+        if (!registerAsGuardian) {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text(
-                    text = displayError,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFFD94F4F)
+                    text = "EMERGENCY CONTACT",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = C.muted,
+                    letterSpacing = 0.5.sp
+                )
+                AuthField(
+                    label = "Contact Name",
+                    value = boarderDetails.emergencyContactName,
+                    onValueChange = { boarderDetails = boarderDetails.copy(emergencyContactName = it) }
+                )
+                AuthField(
+                    label = "Relationship",
+                    value = boarderDetails.emergencyContactRelationship,
+                    onValueChange = { boarderDetails = boarderDetails.copy(emergencyContactRelationship = it) }
+                )
+                AuthField(
+                    label = "Phone Number",
+                    value = boarderDetails.emergencyContactPhone,
+                    onValueChange = { boarderDetails = boarderDetails.copy(emergencyContactPhone = it) },
+                    keyboardType = KeyboardType.Phone
+                )
+                AuthField(
+                    label = "Secondary Phone (optional)",
+                    value = boarderDetails.emergencyContactSecondaryPhone,
+                    onValueChange = { boarderDetails = boarderDetails.copy(emergencyContactSecondaryPhone = it) },
+                    keyboardType = KeyboardType.Phone
+                )
+                AuthField(
+                    label = "Address (optional)",
+                    value = boarderDetails.emergencyContactAddress,
+                    onValueChange = { boarderDetails = boarderDetails.copy(emergencyContactAddress = it) }
                 )
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(20.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text(
+                    text = "GUARDIAN / HOUSE OWNER",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = C.muted,
+                    letterSpacing = 0.5.sp
+                )
+                AuthField(
+                    label = "Guardian Full Name",
+                    value = boarderDetails.guardianContactName,
+                    onValueChange = { boarderDetails = boarderDetails.copy(guardianContactName = it) }
+                )
+                AuthField(
+                    label = "Relationship to Boarder",
+                    value = boarderDetails.guardianContactRelationship,
+                    onValueChange = { boarderDetails = boarderDetails.copy(guardianContactRelationship = it) }
+                )
+                AuthField(
+                    label = "Guardian Contact Number",
+                    value = boarderDetails.guardianContactPhone,
+                    onValueChange = { boarderDetails = boarderDetails.copy(guardianContactPhone = it) },
+                    keyboardType = KeyboardType.Phone
+                )
+                AuthField(
+                    label = "Alternative Number (optional)",
+                    value = boarderDetails.guardianContactAltPhone,
+                    onValueChange = { boarderDetails = boarderDetails.copy(guardianContactAltPhone = it) },
+                    keyboardType = KeyboardType.Phone
+                )
+                AuthField(
+                    label = "Guardian Address (optional)",
+                    value = boarderDetails.guardianContactAddress,
+                    onValueChange = { boarderDetails = boarderDetails.copy(guardianContactAddress = it) }
+                )
+            }
+        }
 
+        // Password strength card
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(C.card)
+                .border(1.dp, C.border, RoundedCornerShape(14.dp))
+                .padding(14.dp)
+        ) {
+            val (strengthText, strengthColor) = when {
+                strengthScore == 6 -> "Strong" to C.sage
+                strengthScore >= 3 -> "Medium" to C.warn
+                else -> "Weak" to Color(0xFFD94F4F)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "PASSWORD STRENGTH",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = C.muted
+                )
+                Text(
+                    text = strengthText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = strengthColor
+                )
+            }
+            Spacer(Modifier.height(8.dp))
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(C.primary)
-                    .clickable {
-                        val trimmed = username.trim()
-                        if (trimmed.isEmpty()) {
-                            formError = "Username is required"
-                            return@clickable
-                        }
-                        if (password.isEmpty()) {
-                            formError = "Password is required"
-                            return@clickable
-                        }
-                        if (password.length < 6) {
-                            formError = "Password must be at least 6 characters"
-                            return@clickable
-                        }
-                        if (password != confirm) {
-                            formError = "Passwords do not match"
-                            return@clickable
-                        }
-                        formError = null
-                        onRegister(trimmed, password, selectedRole)
-                    },
-                contentAlignment = Alignment.Center
+                    .height(6.dp)
+                    .clip(CircleShape)
+                    .background(C.bg)
             ) {
-                Text(
-                    text = "REGISTER",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
+                val progressFraction = strengthScore / 6f
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(progressFraction)
+                        .height(6.dp)
+                        .clip(CircleShape)
+                        .background(strengthColor)
                 )
             }
+            Spacer(Modifier.height(10.dp))
+            RequirementItem("At least 6 characters", reqLen)
+            RequirementItem("One uppercase letter", reqUpper)
+            RequirementItem("One lowercase letter", reqLower)
+            RequirementItem("One number", reqDigit)
+            RequirementItem("One special character", reqSpecial)
+            RequirementItem("Passwords match", reqMatch)
+        }
+
+        Spacer(Modifier.height(4.dp))
+
+        val displayError = formError ?: apiError
+        if (!displayError.isNullOrEmpty()) {
+            Text(
+                text = displayError,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color(0xFFD94F4F)
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(C.primary)
+                .clickable {
+                    val trimmed = username.trim()
+                    if (trimmed.isEmpty()) {
+                        formError = "Username is required"
+                        return@clickable
+                    }
+                    if (trimmed.length < 3) {
+                        formError = "Username must be at least 3 characters"
+                        return@clickable
+                    }
+                    if (!trimmed.matches(Regex("^[a-zA-Z0-9_]+$"))) {
+                        formError = "Username can only contain letters, numbers, and underscores"
+                        return@clickable
+                    }
+                    if (password.isEmpty()) {
+                        formError = "Password is required"
+                        return@clickable
+                    }
+                    if (password.length < 6) {
+                        formError = "Password must be at least 6 characters"
+                        return@clickable
+                    }
+                    if (password != confirm) {
+                        formError = "Passwords do not match"
+                        return@clickable
+                    }
+                    if (!registerAsGuardian) {
+                        if (boarderDetails.emergencyContactName.isBlank() ||
+                            boarderDetails.emergencyContactPhone.isBlank()
+                        ) {
+                            formError = "Please enter emergency contact name and phone"
+                            return@clickable
+                        }
+                        if (boarderDetails.guardianContactName.isBlank() ||
+                            boarderDetails.guardianContactPhone.isBlank()
+                        ) {
+                            formError = "Please enter guardian contact name and phone"
+                            return@clickable
+                        }
+                    }
+                    if (registerAsGuardian && guardianDetails.fullName.isBlank()) {
+                        formError = "Please enter your full name"
+                        return@clickable
+                    }
+                    formError = null
+                    if (registerAsGuardian) {
+                        onRegister(trimmed, password, guardianDetails, null, true)
+                    } else {
+                        onRegister(trimmed, password, null, boarderDetails, false)
+                    }
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "REGISTER",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
         }
     }
 }
 
 @Composable
 private fun ForgotScreenContent(
-    onBack: () -> Unit,
-    onSubmit: (String) -> Unit
+    onBack: () -> Unit
 ) {
-    var username by remember { mutableStateOf("") }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -545,54 +726,68 @@ private fun ForgotScreenContent(
             color = C.primary,
             modifier = Modifier.clickable { onBack() }
         )
-
         Spacer(Modifier.height(16.dp))
-
         Text(
             text = "Forgot password",
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
             color = C.text
         )
-
         Spacer(Modifier.height(6.dp))
-
         Text(
-            text = "Enter your username and we'll help you reset access (prototype).",
+            text = "Please contact the administrator to reset your password.",
             fontSize = 14.sp,
             color = C.muted
         )
-
         Spacer(Modifier.height(24.dp))
-
-        AuthField(
-            label = "USERNAME",
-            value = username,
-            onValueChange = { username = it }
-        )
-
-        Spacer(Modifier.height(16.dp))
-
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp)
                 .clip(RoundedCornerShape(14.dp))
                 .background(C.primary)
-                .clickable {
-                    if (username.isNotBlank()) {
-                        onSubmit(username)
-                    }
-                },
+                .clickable { onBack() },
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "Continue",
+                text = "Back to Login",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
         }
+    }
+}
+
+@Composable
+private fun RoleOption(
+    label: String,
+    icon: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (selected) C.primary.copy(alpha = 0.10f) else C.card)
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) C.primary else C.border,
+                shape = RoundedCornerShape(14.dp)
+            )
+            .clickable { onClick() }
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(text = icon, fontSize = 20.sp)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = label,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = if (selected) C.primary else C.text
+        )
     }
 }
 
@@ -619,81 +814,15 @@ private fun RequirementItem(label: String, met: Boolean) {
 }
 
 @Composable
-private fun RoleOptionCard(
-    role: Role,
-    emoji: String,
-    bg: Color,
-    title: String,
-    sub: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (selected) bg else C.card)
-            .border(
-                width = if (selected) 1.5.dp else 1.dp,
-                color = if (selected) C.primary else C.border,
-                shape = RoundedCornerShape(14.dp)
-            )
-            .clickable { onClick() }
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(if (selected) Color.White.copy(alpha = 0.6f) else bg),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(emoji, fontSize = 20.sp)
-        }
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = C.text
-            )
-            Text(
-                text = sub,
-                fontSize = 12.sp,
-                color = C.muted
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .size(20.dp)
-                .clip(CircleShape)
-                .border(2.dp, if (selected) C.primary else C.border, CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            if (selected) {
-                Box(
-                    modifier = Modifier
-                        .size(10.dp)
-                        .clip(CircleShape)
-                        .background(C.primary)
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun AuthField(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
     isPassword: Boolean = false,
     showPassword: Boolean = false,
-    onTogglePassword: () -> Unit = {}
+    onTogglePassword: () -> Unit = {},
+    keyboardType: KeyboardType = KeyboardType.Text,
+    placeholder: String? = null
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
@@ -703,9 +832,7 @@ private fun AuthField(
             color = C.muted,
             letterSpacing = 0.5.sp
         )
-
         Spacer(Modifier.height(6.dp))
-
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -725,8 +852,8 @@ private fun AuthField(
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     textStyle = TextStyle(
-                        fontSize = 15.sp,
-                        color = C.text
+                        fontSize = 14.sp,
+                        color = if (value.isEmpty() && !isPassword) C.muted else C.text
                     ),
                     cursorBrush = SolidColor(C.primary),
                     visualTransformation = if (isPassword && !showPassword) {
@@ -735,10 +862,15 @@ private fun AuthField(
                         VisualTransformation.None
                     },
                     keyboardOptions = KeyboardOptions(
-                        keyboardType = if (isPassword) KeyboardType.Password else KeyboardType.Text
-                    )
+                        keyboardType = if (isPassword) KeyboardType.Password else keyboardType
+                    ),
+                    decorationBox = { inner ->
+                        if (value.isEmpty() && placeholder != null) {
+                            Text(placeholder, color = C.muted, fontSize = 14.sp)
+                        }
+                        inner()
+                    }
                 )
-
                 if (isPassword) {
                     Text(
                         text = if (showPassword) "👁" else "👁‍🗨",

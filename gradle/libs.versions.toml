@@ -13,6 +13,7 @@ zxing = "3.5.3"
 gson = "2.11.0"
 room = "2.8.5"
 ksp = "2.1.10-1.0.31"
+bcrypt = "0.10.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -39,6 +40,7 @@ room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "
 room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 ksp = { group = "com.google.devtools.ksp", name = "ksp", version.ref = "ksp" }
+bcrypt = { group = "at.favre.lib", name = "bcrypt", version.ref = "bcrypt" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

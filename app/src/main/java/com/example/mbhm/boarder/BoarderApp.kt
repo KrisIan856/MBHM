@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,7 +33,7 @@ import android.app.Activity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.mbhm.data.SampleData
+import com.example.mbhm.data.repository.AppRepository
 import com.example.mbhm.model.Announcement
 import com.example.mbhm.model.AttendanceRecord
 import com.example.mbhm.model.Boarder
@@ -41,6 +42,7 @@ import com.example.mbhm.model.PaymentRecord
 import com.example.mbhm.model.Priority
 import com.example.mbhm.ui.components.Avatar
 import com.example.mbhm.ui.components.C
+import com.example.mbhm.ui.components.EmptyState
 import com.example.mbhm.ui.components.NavBar
 import com.example.mbhm.ui.components.NavItem
 import com.example.mbhm.ui.components.QRCodeDisplay
@@ -48,9 +50,15 @@ import com.example.mbhm.ui.components.ScrollBody
 import com.example.mbhm.ui.components.SectionHeader
 import com.example.mbhm.ui.components.Toast
 import com.example.mbhm.ui.components.money
+import com.example.mbhm.data.entity.UserEntity
+import kotlinx.coroutines.flow.first
 
 @Composable
-fun BoarderApp(onLogout: () -> Unit) {
+fun BoarderApp(
+    user: UserEntity,
+    appRepository: AppRepository,
+    onLogout: () -> Unit
+) {
     val context = LocalContext.current
     val activity = context as? Activity
     var tab by remember { mutableStateOf("home") }
@@ -62,13 +70,25 @@ fun BoarderApp(onLogout: () -> Unit) {
             activity?.moveTaskToBack(true)
         }
     }
-    val boarder = SampleData.loggedInBoarder
-    val payments = remember { mutableStateOf(SampleData.payments) }
-    val attnRecords = remember { mutableStateOf(SampleData.attendanceRecords) }
-    val announcements = remember { mutableStateOf(SampleData.announcements) }
-    val maintenance = remember { mutableStateOf(SampleData.maintenanceReports) }
-    val curfew = remember { mutableStateOf(SampleData.curfewRecords) }
+    val boarder = remember { mutableStateOf<com.example.mbhm.model.Boarder?>(null) }
+    val payments = remember { mutableStateOf<List<com.example.mbhm.model.PaymentRecord>>(emptyList()) }
+    val attnRecords = remember { mutableStateOf<List<com.example.mbhm.model.AttendanceRecord>>(emptyList()) }
+    val announcements = remember { mutableStateOf<List<com.example.mbhm.model.Announcement>>(emptyList()) }
+    val maintenance = remember { mutableStateOf<List<com.example.mbhm.model.MaintenanceReport>>(emptyList()) }
+    val curfew = remember { mutableStateOf<List<com.example.mbhm.model.CurfewRecord>>(emptyList()) }
     var toast by remember { mutableStateOf<String?>(null) }
+
+    val boarderId = user.boarderId
+
+    LaunchedEffect(boarderId) {
+        if (boarderId == null) return@LaunchedEffect
+        boarder.value = appRepository.getBoarderById(boarderId)
+        payments.value = appRepository.getPaymentsByBoarder(boarderId).first()
+        attnRecords.value = appRepository.getAttendanceByBoarder(boarderId).first()
+        maintenance.value = appRepository.getMaintenanceByBoarder(boarderId).first()
+        curfew.value = appRepository.getCurfewByBoarder(boarderId).first()
+        announcements.value = appRepository.getAllAnnouncements().first()
+    }
 
     val navItems = listOf(
         NavItem("home", "Home", "🏠"),
@@ -81,12 +101,25 @@ fun BoarderApp(onLogout: () -> Unit) {
     Box(Modifier.fillMaxSize().background(C.bg)) {
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
-                when (tab) {
-                    "home" -> BHome(boarder, payments.value, announcements.value, attnRecords.value, onTabChange = { tab = it }, showToast = { toast = it })
-                    "payments" -> BPayments(boarder, payments.value, setPayments = { payments.value = it }, showToast = { toast = it })
-                    "attendance" -> BAttendance(boarder, attnRecords.value, setAttnRecords = { attnRecords.value = it }, showToast = { toast = it })
-                    "security" -> BSecurity(boarder, announcements.value, setAnnouncements = { announcements.value = it }, maintenance.value, setMaintenance = { maintenance.value = it }, curfew.value, setCurfew = { curfew.value = it }, showToast = { toast = it })
-                    "more" -> BMore(boarder, onLogout, showToast = { toast = it })
+                val b = boarder.value
+                if (b != null) {
+                    when (tab) {
+                        "home" -> BHome(b, payments.value, announcements.value, attnRecords.value, onTabChange = { tab = it }, showToast = { toast = it })
+                        "payments" -> BPayments(b, payments.value, setPayments = { payments.value = it }, showToast = { toast = it })
+                        "attendance" -> BAttendance(b, attnRecords.value, setAttnRecords = { attnRecords.value = it }, showToast = { toast = it })
+                        "security" -> BSecurity(b, announcements.value, setAnnouncements = { announcements.value = it }, maintenance.value, setMaintenance = { maintenance.value = it }, curfew.value, setCurfew = { curfew.value = it }, showToast = { toast = it })
+                        "more" -> BMore(b, onLogout, showToast = { toast = it })
+                    }
+                } else {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        EmptyState(
+                            icon = if (boarderId == null) "🔗" else "🏠",
+                            title = if (boarderId == null) "Account not linked" else "Loading…",
+                            sub = if (boarderId == null)
+                                "This login isn't linked to a boarder profile yet."
+                            else null
+                        )
+                    }
                 }
             }
             NavBar(navItems, tab, onSelect = { tab = it })

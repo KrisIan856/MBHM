@@ -1,5 +1,6 @@
 package com.example.mbhm.guardian
 
+import android.app.DatePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -63,6 +64,9 @@ import com.example.mbhm.ui.components.SectionHeader
 import com.example.mbhm.ui.components.Select
 import com.example.mbhm.ui.components.Textarea
 import com.example.mbhm.ui.components.money
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
 private val availableMonths = listOf(
     "May 2026", "Jun 2026", "Jul 2026", "Aug 2026", "Sep 2026", "Oct 2026", "Nov 2026", "Dec 2026"
@@ -112,12 +116,12 @@ fun GPayments(
             setPayments = setPayments,
             showToast = showToast,
             onBack = { back() },
-            onCash = { nav("cash") }
+            onCash = { nav("cash", screenData as Boarder) }
         )
         return
     }
     if (screen == "cash") {
-        GPay_Cash(boarders, payments, setPayments, showToast, onBack = { back() })
+        GPay_Cash(boarders, payments, setBoarders, setPayments, showToast, onBack = { back() }, selectedBoarder = (screenData as? Boarder))
         return
     }
     if (screen == "settings") {
@@ -669,20 +673,29 @@ private fun payHistoryCard(p: PaymentRecord) {
 private fun GPay_Cash(
     boarders: List<Boarder>,
     payments: List<PaymentRecord>,
+    setBoarders: (List<Boarder>) -> Unit,
     setPayments: (List<PaymentRecord>) -> Unit,
     showToast: (String) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    selectedBoarder: Boarder? = null
 ) {
-    var boarderId by remember { mutableStateOf(boarders[0].id) }
+    var boarderId by remember(boarders) { mutableStateOf(selectedBoarder?.id ?: boarders.firstOrNull()?.id ?: "") }
     var period by remember { mutableStateOf("Sep 2026") }
     var payDate by remember { mutableStateOf("Sep 07, 2026") }
-    var amountDueInput by remember { mutableStateOf(boarders[0].monthlyRate.toString()) }
-    var amountPaidInput by remember { mutableStateOf(boarders[0].monthlyRate.toString()) }
+    var amountDueInput by remember(boarders, selectedBoarder) { mutableStateOf(selectedBoarder?.monthlyRate?.toString() ?: boarders.firstOrNull()?.monthlyRate?.toString() ?: "0") }
+    var amountPaidInput by remember(boarders, selectedBoarder) { mutableStateOf(selectedBoarder?.monthlyRate?.toString() ?: boarders.firstOrNull()?.monthlyRate?.toString() ?: "0") }
     var method by remember { mutableStateOf("cash") }
     var notes by remember { mutableStateOf("") }
     var showConfirmDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy", Locale.US) }
+    val periodFormat = remember { SimpleDateFormat("MMM yyyy", Locale.US) }
 
-    val selectedBoarder = boarders.firstOrNull { it.id == boarderId } ?: boarders[0]
+    val selectedBoarder = boarders.firstOrNull { it.id == boarderId } ?: boarders.firstOrNull()
+    if (selectedBoarder == null) {
+        EmptyState(icon = "💳", title = "No boarders yet")
+        return
+    }
     val amountDueVal = amountDueInput.toIntOrNull() ?: 0
     val amountPaidVal = amountPaidInput.toIntOrNull() ?: 0
     val remainingBalance = (amountDueVal - amountPaidVal).coerceAtLeast(0)
@@ -715,7 +728,20 @@ private fun GPay_Cash(
             notes = finalNotes
         )
 
-        setPayments(payments + newRec)
+        val existing = payments.firstOrNull { it.boarderId == boarderId && it.period == period }
+        val updatedPayments = if (existing == null) {
+            payments + newRec
+        } else {
+            payments.map { if (it.id == existing.id) newRec.copy(id = existing.id) else it }
+        }
+        setPayments(updatedPayments)
+        setBoarders(
+            boarders.map { boarder ->
+                if (boarder.id == boarderId) boarder.copy(
+                    paymentStatus = if (isPartial) PayStatus.PARTIAL else PayStatus.PAID
+                ) else boarder
+            }
+        )
         showToast("Payment of ${money(amountPaidVal)} successfully recorded")
         onBack()
     }
@@ -735,20 +761,58 @@ private fun GPay_Cash(
             options = boarders.map { Option(it.id, "${it.name} — Room ${it.room}") }
         )
 
-        // Period & Calendar Selector (Req 4.A)
-        Select(
-            label = "Billing Period",
-            value = period,
-            onChange = { period = it },
-            options = availableMonths.map { Option(it, it) }
-        )
+        // Calendar selectors keep the billing period and payment date explicit.
+        Box(
+            Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(C.bg)
+                .border(1.dp, C.border, RoundedCornerShape(10.dp))
+                .clickable {
+                    val calendar = Calendar.getInstance()
+                    DatePickerDialog(
+                        context,
+                        { _, year, month, day ->
+                            calendar.set(year, month, day)
+                            period = periodFormat.format(calendar.time)
+                        },
+                        calendar.get(Calendar.YEAR),
+                        calendar.get(Calendar.MONTH),
+                        calendar.get(Calendar.DAY_OF_MONTH)
+                    ).show()
+                }
+                .padding(horizontal = 14.dp, vertical = 12.dp)
+        ) {
+            Column {
+                Text("Billing Period (calendar)", color = C.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(period, color = C.text, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
+            }
+        }
 
-        Input(
-            label = "Payment Date",
-            value = payDate,
-            onChange = { payDate = it },
-            placeholder = "e.g. Sep 07, 2026"
-        )
+        Box(
+            Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(C.bg)
+                .border(1.dp, C.border, RoundedCornerShape(10.dp))
+                .clickable {
+                    val calendar = Calendar.getInstance()
+                    DatePickerDialog(
+                        context,
+                        { _, year, month, day ->
+                            calendar.set(year, month, day)
+                            payDate = dateFormat.format(calendar.time)
+                        },
+                        calendar.get(Calendar.YEAR),
+                        calendar.get(Calendar.MONTH),
+                        calendar.get(Calendar.DAY_OF_MONTH)
+                    ).show()
+                }
+                .padding(horizontal = 14.dp, vertical = 12.dp)
+        ) {
+            Column {
+                Text("Payment Date (calendar)", color = C.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(payDate, color = C.text, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
+            }
+        }
 
         // Amount Due (Editable - Req 4.B)
         Input(

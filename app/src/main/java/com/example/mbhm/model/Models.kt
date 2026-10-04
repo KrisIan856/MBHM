@@ -199,9 +199,57 @@ data class WorshipSchedule(
     val absenceThreshold: Int
 )
 
+data class ReminderSettings(
+    val before3: Boolean = true,
+    val before1: Boolean = true,
+    val onDay: Boolean = true,
+    val after1: Boolean = true,
+    val after3: Boolean = true
+)
+
+data class ChannelSettings(
+    val inApp: Boolean = true,
+    val sms: Boolean = false,
+    val email: Boolean = false
+)
+
 data class BillingSettings(
     val dueDay: Int,
     val gracePeriodDays: Int,
     val penaltyType: PenaltyType,
-    val penaltyAmount: Int
+    val penaltyAmount: Int,
+    val reminders: ReminderSettings = ReminderSettings(),
+    val channels: ChannelSettings = ChannelSettings()
+)
+
+data class GuardianDetails(
+    val fullName: String = "",
+    val phone: String = "",
+    val houseName: String = "",
+    val houseAddress: String = ""
+)
+
+data class BoarderDetails(
+    val name: String = "",
+    val room: String = "",
+    val floor: String = "",
+    val phone: String = "",
+    val email: String = "",
+    val joinDate: String = "",
+    val monthlyRate: String = "",
+    val dueDay: String = "5",
+    val gracePeriodDays: String = "5",
+    val latePenaltyType: String = "FLAT",
+    val latePenaltyAmount: String = "0",
+    val job: String = "",
+    val emergencyContactName: String = "",
+    val emergencyContactRelationship: String = "",
+    val emergencyContactPhone: String = "",
+    val emergencyContactSecondaryPhone: String = "",
+    val emergencyContactAddress: String = "",
+    val guardianContactName: String = "",
+    val guardianContactRelationship: String = "",
+    val guardianContactPhone: String = "",
+    val guardianContactAltPhone: String = "",
+    val guardianContactAddress: String = ""
 )

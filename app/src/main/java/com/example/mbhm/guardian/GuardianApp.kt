@@ -18,12 +18,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,14 +37,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.mbhm.data.SampleData
+import com.example.mbhm.data.repository.AppRepository
 import com.example.mbhm.model.*
 import com.example.mbhm.ui.components.*
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 @Composable
 fun GuardianApp(onLogout: () -> Unit) {
     val context = LocalContext.current
     val activity = context as? Activity
+    val scope = rememberCoroutineScope()
     var tab by remember { mutableStateOf("dashboard") }
 
     BackHandler {
@@ -51,19 +58,39 @@ fun GuardianApp(onLogout: () -> Unit) {
         }
     }
 
-    val boarders = remember { mutableStateOf(SampleData.boarders) }
-    val payments = remember { mutableStateOf(SampleData.payments) }
-    val attnRecords = remember { mutableStateOf(SampleData.attendanceRecords) }
-    val announcements = remember { mutableStateOf(SampleData.announcements) }
-    val incidents = remember { mutableStateOf(SampleData.incidents) }
-    val maintenance = remember { mutableStateOf(SampleData.maintenanceReports) }
-    val curfewRecords = remember { mutableStateOf(SampleData.curfewRecords) }
-    val billing = remember { mutableStateOf(SampleData.defaultBilling) }
-    val schedule = remember { mutableStateOf(SampleData.worshipSchedule) }
-    var leaveNotices by remember { mutableStateOf(SampleData.leaveNotices) }
+    val boarders = remember { mutableStateOf<List<com.example.mbhm.model.Boarder>>(emptyList()) }
+    val payments = remember { mutableStateOf<List<com.example.mbhm.model.PaymentRecord>>(emptyList()) }
+    val attnRecords = remember { mutableStateOf<List<com.example.mbhm.model.AttendanceRecord>>(emptyList()) }
+    val announcements = remember { mutableStateOf<List<com.example.mbhm.model.Announcement>>(emptyList()) }
+    val incidents = remember { mutableStateOf<List<com.example.mbhm.model.Incident>>(emptyList()) }
+    val maintenance = remember { mutableStateOf<List<com.example.mbhm.model.MaintenanceReport>>(emptyList()) }
+    val curfewRecords = remember { mutableStateOf<List<com.example.mbhm.model.CurfewRecord>>(emptyList()) }
+    val billing = remember { mutableStateOf<com.example.mbhm.model.BillingSettings?>(null) }
+    val schedule = remember { mutableStateOf<com.example.mbhm.model.WorshipSchedule?>(null) }
+    val sessions = remember { mutableStateOf<List<com.example.mbhm.model.AttendanceSession>>(emptyList()) }
+    var leaveNotices by remember { mutableStateOf<List<com.example.mbhm.model.LeaveNotice>>(emptyList()) }
     var toast by remember { mutableStateOf<String?>(null) }
     var securityDeepLink by remember { mutableStateOf<String?>(null) }
     var showProfileModal by remember { mutableStateOf(false) }
+    var showLeaveNoticesModal by remember { mutableStateOf(false) }
+    var loaded by remember { mutableStateOf(false) }
+
+    val appRepository = remember { AppRepository.getInstance(context) }
+
+    LaunchedEffect(Unit) {
+        boarders.value = appRepository.getAllBoarders().first()
+        payments.value = appRepository.getAllPayments().first()
+        attnRecords.value = appRepository.getAllAttendanceRecords().first()
+        announcements.value = appRepository.getAllAnnouncements().first()
+        incidents.value = appRepository.getAllIncidents().first()
+        maintenance.value = appRepository.getAllMaintenanceReports().first()
+        curfewRecords.value = appRepository.getAllCurfewRecords().first()
+        billing.value = appRepository.getBillingSettings()
+        schedule.value = appRepository.getWorshipSchedule()
+        sessions.value = appRepository.getAllAttendanceSessions().first()
+        leaveNotices = appRepository.leaveNotices.getAll().first()
+        loaded = true
+    }
 
     val navItems = listOf(
         NavItem("dashboard", "Home", "🏠"),
@@ -84,26 +111,32 @@ fun GuardianApp(onLogout: () -> Unit) {
                         leaveNotices = leaveNotices,
                         onTabChange = { tab = it },
                         onEmergencyContacts = { securityDeepLink = "contacts"; tab = "security" },
-                        onProfileClick = { showProfileModal = true }
+                        onProfileClick = { showProfileModal = true },
+                        onBoarderInfo = { securityDeepLink = "boarders"; tab = "security" },
+                        onLeaveNotices = { showLeaveNoticesModal = true }
                     )
-                    "payments" -> GPayments(
-                        boarders = boarders.value,
-                        payments = payments.value,
-                        billing = billing.value,
-                        setBoarders = { boarders.value = it },
-                        setPayments = { payments.value = it },
-                        setBilling = { billing.value = it },
-                        showToast = { toast = it }
-                    )
-                    "attendance" -> GAttendance(
-                        boarders = boarders.value,
-                        sessions = SampleData.sessions,
-                        records = attnRecords.value,
-                        setRecords = { attnRecords.value = it },
-                        schedule = schedule.value,
-                        setSchedule = { schedule.value = it },
-                        showToast = { toast = it }
-                    )
+                    "payments" -> billing.value?.let { b ->
+                        GPayments(
+                            boarders = boarders.value,
+                            payments = payments.value,
+                            billing = b,
+                            setBoarders = { boarders.value = it },
+                            setPayments = { payments.value = it },
+                            setBilling = { billing.value = it },
+                            showToast = { toast = it }
+                        )
+                    } ?: Placeholder("💳", "Loading payments…")
+                    "attendance" -> schedule.value?.let { s ->
+                        GAttendance(
+                            boarders = boarders.value,
+                            sessions = sessions.value,
+                            records = attnRecords.value,
+                            setRecords = { attnRecords.value = it },
+                            schedule = s,
+                            setSchedule = { schedule.value = it },
+                            showToast = { toast = it }
+                        )
+                    } ?: Placeholder("📅", "Loading attendance…")
                     "security" -> GSecurity(
                         boarders = boarders.value,
                         setBoarders = { boarders.value = it },
@@ -172,6 +205,95 @@ fun GuardianApp(onLogout: () -> Unit) {
                 }
             }
         }
+
+        Modal(
+            open = showLeaveNoticesModal,
+            onClose = { showLeaveNoticesModal = false },
+            title = "Leave Notices"
+        ) {
+            if (leaveNotices.isEmpty()) {
+                EmptyState(icon = "📋", title = "No leave notices")
+            } else {
+                leaveNotices.forEach { notice ->
+                    val (label, bg0, fg) = when (notice.status) {
+                        LeaveNoticeStatus.PENDING -> Triple("Pending", C.warnLt, C.warn)
+                        LeaveNoticeStatus.APPROVED -> Triple("Approved", C.sageLt, C.greenText)
+                        LeaveNoticeStatus.REJECTED -> Triple("Rejected", C.dangerLt, C.danger)
+                        LeaveNoticeStatus.COMPLETED -> Triple("Completed", C.blueLt, C.blueText)
+                    }
+                    PCard {
+                        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(notice.reason, color = C.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("${notice.leaveDate} · ${notice.destination}", color = C.muted, fontSize = 12.sp)
+                                }
+                                Box(Modifier.clip(RoundedCornerShape(50)).background(bg0).padding(horizontal = 10.dp, vertical = 4.dp)) {
+                                    Text(label, color = fg, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            if (notice.status == LeaveNoticeStatus.PENDING) {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(top = 6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            scope.launch {
+                                                appRepository.leaveNotices.update(
+                                                    notice.copy(status = LeaveNoticeStatus.APPROVED)
+                                                )
+                                            }
+                                            leaveNotices = leaveNotices.map {
+                                                if (it.id == notice.id) notice.copy(status = LeaveNoticeStatus.APPROVED) else it
+                                            }
+                                            toast = "Leave notice approved"
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = C.sageLt),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("✓ Approve", color = C.greenText, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
+                                    Button(
+                                        onClick = {
+                                            scope.launch {
+                                                appRepository.leaveNotices.update(
+                                                    notice.copy(status = LeaveNoticeStatus.REJECTED)
+                                                )
+                                            }
+                                            leaveNotices = leaveNotices.map {
+                                                if (it.id == notice.id) notice.copy(status = LeaveNoticeStatus.REJECTED) else it
+                                            }
+                                            toast = "Leave notice declined"
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = C.dangerLt),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("✕ Decline", color = C.danger, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Placeholder(icon: String, message: String) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(icon, fontSize = 32.sp)
+            Text(message, color = C.muted, fontSize = 14.sp)
+        }
     }
 }
 
@@ -183,7 +305,9 @@ fun GDashboard(
     leaveNotices: List<LeaveNotice>,
     onTabChange: (String) -> Unit,
     onEmergencyContacts: () -> Unit,
-    onProfileClick: () -> Unit
+    onProfileClick: () -> Unit,
+    onBoarderInfo: () -> Unit,
+    onLeaveNotices: () -> Unit
 ) {
     val sepPay = payments.filter { it.period == "Sep 2026" }
     val paid = sepPay.count { it.status == PayStatus.PAID }
@@ -303,7 +427,9 @@ fun GDashboard(
             onPaymentsClick = { onTabChange("payments") },
             onAttendanceClick = { onTabChange("attendance") },
             onEmergencyContactsClick = onEmergencyContacts,
-            onSecurityClick = { onTabChange("security") }
+            onSecurityClick = { onTabChange("security") },
+            onBoarderInfoClick = onBoarderInfo,
+            onLeaveNoticesClick = onLeaveNotices
         )
     }
 }
@@ -314,7 +440,9 @@ fun GuardianQuickActions(
     onPaymentsClick: () -> Unit,
     onAttendanceClick: () -> Unit,
     onEmergencyContactsClick: () -> Unit,
-    onSecurityClick: () -> Unit
+    onSecurityClick: () -> Unit,
+    onBoarderInfoClick: () -> Unit,
+    onLeaveNoticesClick: () -> Unit
 ) {
     Column {
         SectionHeader(title = "Quick Actions")
@@ -325,6 +453,10 @@ fun GuardianQuickActions(
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             dashAction(Modifier.weight(1f), "🛡️", "Security", C.card, C.border, C.text, onSecurityClick)
             dashAction(Modifier.weight(1f), "📞", "Emergency", C.dangerLt, Color(0xFFF5C4C4), C.danger, onEmergencyContactsClick)
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            dashAction(Modifier.weight(1f), "👥", "Boarders", C.card, C.border, C.text, onBoarderInfoClick)
+            dashAction(Modifier.weight(1f), "📝", "Leave Notices", C.card, C.border, C.text, onLeaveNoticesClick)
         }
     }
 }

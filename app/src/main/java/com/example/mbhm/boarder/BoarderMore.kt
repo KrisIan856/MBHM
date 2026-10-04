@@ -1,4 +1,5 @@
-﻿package com.example.mbhm.boarder
+package com.example.mbhm.boarder
+
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -31,7 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.mbhm.data.SampleData
+
 import com.example.mbhm.model.Boarder
 import com.example.mbhm.model.EmergencyContact
 import com.example.mbhm.model.GuardianContact
@@ -51,15 +53,18 @@ import com.example.mbhm.ui.components.Textarea
 import com.example.mbhm.ui.components.Toggle
 import com.example.mbhm.ui.components.money
 
+
 @Composable
 fun BMore(
     boarder: Boarder,
     onLogout: () -> Unit,
     showToast: (String) -> Unit
 ) {
+
     var currentBoarder by remember { mutableStateOf(boarder) }
     var screen by remember { mutableStateOf("main") }
     var showLogoutDialog by remember { mutableStateOf(false) }
+
 
     // Emergency & Guardian Edit State
     var showEditContactsModal by remember { mutableStateOf(false) }
@@ -76,8 +81,9 @@ fun BMore(
     var editGAddress by remember { mutableStateOf(currentBoarder.guardianContact.address ?: "") }
     var contactsError by remember { mutableStateOf<String?>(null) }
 
+
     // Leave Notice State
-    var leaveNoticeList by remember { mutableStateOf(SampleData.leaveNotices.filter { it.boarderId == currentBoarder.id }) }
+    var leaveNoticeList by remember { mutableStateOf<List<LeaveNotice>>(emptyList()) }
     var showLeaveModal by remember { mutableStateOf(false) }
     var leaveStep by remember { mutableStateOf("form") } // "form" or "review"
     var lLeaveDate by remember { mutableStateOf("Sep 20, 2026") }
@@ -89,8 +95,11 @@ fun BMore(
     var lNotes by remember { mutableStateOf("") }
     var leaveFormError by remember { mutableStateOf<String?>(null) }
 
+
     if (screen == "leave_history") {
+
         Screen(title = "Leave Notices", onBack = { screen = "main" }) {
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -107,38 +116,54 @@ fun BMore(
                     .padding(16.dp),
                 contentAlignment = Alignment.Center
             ) {
+
                 Text(
                     text = "+ File New Leave Notice",
                     color = Color.White,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold
                 )
+
             }
 
             Spacer(Modifier.height(12.dp))
+
 
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+
                 leaveNoticeList.forEach { notice ->
-                    LeaveNoticeCard(notice)
+                    LeaveNoticeCard(
+                        notice = notice,
+                        showToast = showToast,
+                        onUpdate = { updated ->
+                            leaveNoticeList = leaveNoticeList.map { if (it.id == updated.id) updated else it }
+                        }
+                    )
                 }
                 if (leaveNoticeList.isEmpty()) {
-                    EmptyState(icon = "ðŸ“…", title = "No leave notices filed yet")
+                    EmptyState(icon = "📅", title = "No leave notices filed yet")
                 }
+
             }
+
         }
         return
     }
 
+
     if (screen == "profile") {
+
         Screen(title = "My Profile", onBack = { screen = "main" }) {
+
             Column(
                 Modifier.fillMaxWidth().padding(vertical = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+
                 Avatar(initials = currentBoarder.initials, color = currentBoarder.avatarColor, size = 72)
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
@@ -154,7 +179,9 @@ fun BMore(
                         modifier = Modifier.padding(top = 2.dp)
                     )
                 }
+
             }
+
 
             PCard {
                 Text(
@@ -186,13 +213,43 @@ fun BMore(
                 }
             }
 
+
+            // Contact Information Section (with working edit button)
             PCard {
-                Text(
-                    "Contact Information",
-                    color = C.text,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Contact Information",
+                        color = C.text,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        "✏ Edit",
+                        color = C.primary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable {
+                            // Pre-fill the edit modal with all contact data
+                            editEmName = currentBoarder.emergencyContact.name
+                            editEmRel = currentBoarder.emergencyContact.relationship
+                            editEmPhone = currentBoarder.emergencyContact.phone
+                            editEmSecPhone = currentBoarder.emergencyContact.secondaryPhone ?: ""
+                            editEmAddress = currentBoarder.emergencyContact.address ?: ""
+
+                            editGName = currentBoarder.guardianContact.name
+                            editGRel = currentBoarder.guardianContact.relationship
+                            editGPhone = currentBoarder.guardianContact.phone
+                            editGAltPhone = currentBoarder.guardianContact.altPhone ?: ""
+                            editGAddress = currentBoarder.guardianContact.address ?: ""
+                            contactsError = null
+                            showEditContactsModal = true
+                        }
+                    )
+                }
                 listOf(
                     "Phone" to currentBoarder.phone,
                     "Email" to currentBoarder.email
@@ -212,6 +269,7 @@ fun BMore(
                 }
             }
 
+
             // Emergency Contact Section
             PCard {
                 Row(
@@ -226,7 +284,7 @@ fun BMore(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        "âœ Edit",
+                        "✓ Edit",
                         color = C.primary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
@@ -271,6 +329,7 @@ fun BMore(
                 }
             }
 
+
             // Guardian Contact Section
             PCard {
                 Row(
@@ -283,6 +342,27 @@ fun BMore(
                         color = C.text,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        "✓ Edit",
+                        color = C.primary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable {
+                            editEmName = currentBoarder.emergencyContact.name
+                            editEmRel = currentBoarder.emergencyContact.relationship
+                            editEmPhone = currentBoarder.emergencyContact.phone
+                            editEmSecPhone = currentBoarder.emergencyContact.secondaryPhone ?: ""
+                            editEmAddress = currentBoarder.emergencyContact.address ?: ""
+
+                            editGName = currentBoarder.guardianContact.name
+                            editGRel = currentBoarder.guardianContact.relationship
+                            editGPhone = currentBoarder.guardianContact.phone
+                            editGAltPhone = currentBoarder.guardianContact.altPhone ?: ""
+                            editGAddress = currentBoarder.guardianContact.address ?: ""
+                            contactsError = null
+                            showEditContactsModal = true
+                        }
                     )
                 }
 
@@ -308,12 +388,17 @@ fun BMore(
                     }
                 }
             }
+
+
         }
         return
     }
 
+
     if (screen == "settings") {
+
         Screen(title = "Settings", onBack = { screen = "main" }) {
+
             PCard {
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(
@@ -321,12 +406,6 @@ fun BMore(
                         color = C.text,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold
-                    )
-                    Toggle(
-                        label = "Payment Reminders",
-                        sub = "In-app reminder before rent is due",
-                        checked = true,
-                        onChange = { showToast("Notification settings updated") }
                     )
                     Toggle(
                         label = "Attendance Reminders",
@@ -342,6 +421,7 @@ fun BMore(
                     )
                 }
             }
+
 
             PCard {
                 Text(
@@ -369,11 +449,14 @@ fun BMore(
                     }
                 }
             }
+
         }
         return
     }
 
+
     Screen(title = "More") {
+
         Row(
             Modifier.fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
@@ -384,6 +467,7 @@ fun BMore(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+
             Avatar(initials = currentBoarder.initials, color = currentBoarder.avatarColor, size = 60)
             Column(Modifier.weight(1f)) {
                 Text(
@@ -393,7 +477,7 @@ fun BMore(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    "Room ${currentBoarder.room} Â· ${currentBoarder.job}",
+                    "Room ${currentBoarder.room} · ${currentBoarder.job}",
                     color = C.muted,
                     fontSize = 14.sp,
                     modifier = Modifier.padding(top = 2.dp)
@@ -405,29 +489,33 @@ fun BMore(
                     modifier = Modifier.padding(top = 2.dp)
                 )
             }
-            Text("View â†’", color = C.primary, fontSize = 14.sp)
+
+            Text("View →", color = C.primary, fontSize = 14.sp)
+
         }
+
 
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             RowItem(
-                icon = "ðŸ“…",
+                icon = "📅",
                 label = "Leave Notice",
                 sub = "Submit leave notice & view statuses",
                 onClick = { screen = "leave_history" }
             )
             RowItem(
-                icon = "ðŸ‘¤",
+                icon = "👤",
                 label = "Profile & Contacts",
                 sub = "Emergency & Guardian contact info",
                 onClick = { screen = "profile" }
             )
             RowItem(
-                icon = "âš™ï¸",
+                icon = "⚙️",
                 label = "Settings",
                 sub = "App preferences & notifications",
                 onClick = { screen = "settings" }
             )
         }
+
 
         Box(
             Modifier.fillMaxWidth()
@@ -437,13 +525,16 @@ fun BMore(
                 .padding(vertical = 16.dp),
             contentAlignment = Alignment.Center
         ) {
+
             Text(
                 "Sign Out",
                 color = C.danger,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold
             )
+
         }
+
 
         if (showLogoutDialog) {
             AlertDialog(
@@ -463,12 +554,14 @@ fun BMore(
             )
         }
 
+
         // Edit Emergency & Guardian Contacts Modal
         Modal(
             open = showEditContactsModal,
             onClose = { showEditContactsModal = false },
             title = "Edit Contact Information"
         ) {
+
             Text("EMERGENCY CONTACT", color = C.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             Input(label = "Emergency Contact Name", value = editEmName, onChange = { editEmName = it })
             Input(label = "Relationship", value = editEmRel, onChange = { editEmRel = it })
@@ -490,6 +583,7 @@ fun BMore(
             contactsError?.let { err ->
                 Text(err, color = C.danger, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
+
 
             ActionPair(
                 onCancel = { showEditContactsModal = false },
@@ -524,7 +618,9 @@ fun BMore(
                 },
                 confirmLabel = "Save Contacts"
             )
+
         }
+
 
         // Leave Notice Modal Form (Requirement 1.C)
         Modal(
@@ -545,6 +641,7 @@ fun BMore(
                     Text(err, color = C.danger, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
 
+
                 ActionPair(
                     onCancel = { showLeaveModal = false },
                     onConfirm = {
@@ -557,6 +654,7 @@ fun BMore(
                     },
                     confirmLabel = "Review Notice"
                 )
+
             } else {
                 // Review step
                 Column(
@@ -575,6 +673,7 @@ fun BMore(
                     if (lNotes.isNotBlank()) {
                         leaveReviewRow("Notes", lNotes)
                     }
+
                 }
 
                 ActionPair(
@@ -599,10 +698,14 @@ fun BMore(
                     },
                     confirmLabel = "Submit Leave Notice"
                 )
+
             }
+
         }
+
     }
 }
+
 
 @Composable
 private fun leaveReviewRow(label: String, value: String) {
@@ -615,14 +718,21 @@ private fun leaveReviewRow(label: String, value: String) {
     }
 }
 
+
 @Composable
-fun LeaveNoticeCard(notice: LeaveNotice) {
+fun LeaveNoticeCard(
+    notice: LeaveNotice,
+    showToast: (String) -> Unit,
+    onUpdate: (LeaveNotice) -> Unit
+) {
+
     val (statusLabel, statusBg, statusTc) = when (notice.status) {
         LeaveNoticeStatus.PENDING -> Triple("Pending", C.warnLt, C.warn)
         LeaveNoticeStatus.APPROVED -> Triple("Approved", C.sageLt, C.greenText)
         LeaveNoticeStatus.REJECTED -> Triple("Rejected", C.dangerLt, C.danger)
         LeaveNoticeStatus.COMPLETED -> Triple("Completed", C.blueLt, C.blueText)
     }
+
 
     Column(
         modifier = Modifier
@@ -633,31 +743,38 @@ fun LeaveNoticeCard(notice: LeaveNotice) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+
             Text(
                 notice.reason,
                 color = C.text,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold
             )
+
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
                     .background(statusBg)
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
+
                 Text(
                     statusLabel,
                     color = statusTc,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
                 )
+
             }
+
         }
+
 
         Text(
             "Destination: ${notice.destination}",
@@ -670,19 +787,24 @@ fun LeaveNoticeCard(notice: LeaveNotice) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
+
             Column {
                 Text("Departure", color = C.muted, fontSize = 11.sp)
-                Text("${notice.leaveDate} Â· ${notice.expectedDepartureTime}", color = C.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text("${notice.leaveDate} · ${notice.expectedDepartureTime}", color = C.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
+
             Column(horizontalAlignment = Alignment.End) {
                 Text("Expected Return", color = C.muted, fontSize = 11.sp)
-                Text("${notice.expectedReturnDate} Â· ${notice.expectedReturnTime}", color = C.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text("${notice.expectedReturnDate} · ${notice.expectedReturnTime}", color = C.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
+
         }
+
 
         notice.additionalNotes?.let { notes ->
             Text("Notes: $notes", color = C.muted, fontSize = 12.sp)
         }
+
 
         Text(
             "Submitted: ${notice.submittedAt}",
@@ -690,5 +812,36 @@ fun LeaveNoticeCard(notice: LeaveNotice) {
             fontSize = 11.sp,
             modifier = Modifier.padding(top = 2.dp)
         )
+
+
+        // "I'm Leaving Now" button — only visible when leave notice is APPROVED
+        // (Requirement 1.C: boarder confirms they are actually leaving)
+        if (notice.status == LeaveNoticeStatus.APPROVED) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(C.primary)
+                    .clickable {
+                        onUpdate(notice.copy(status = LeaveNoticeStatus.COMPLETED))
+                        showToast("✅ Your departure has been recorded. Safe travels!")
+                    }
+                    .padding(vertical = 12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+
+                Text(
+                    "🚪 I'm Leaving Now",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+            }
+        }
+
+
     }
+
 }

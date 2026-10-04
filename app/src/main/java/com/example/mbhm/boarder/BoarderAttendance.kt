@@ -104,13 +104,14 @@ fun BAttendance(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Box(
-                        Modifier.shadow(8.dp, RoundedCornerShape(20.dp))
+                        Modifier
+                            .size(250.dp)
                             .clip(RoundedCornerShape(20.dp))
                             .background(Color.White)
                             .border(1.dp, C.border, RoundedCornerShape(20.dp))
                             .padding(16.dp)
                     ) {
-                        QRCodeDisplay(seed = "boarder-${boarder.id}", size = 220)
+                        QRCodeDisplay(seed = "boarder-${boarder.id}", size = 218)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(

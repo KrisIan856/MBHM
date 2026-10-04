@@ -22,9 +22,10 @@ import com.example.mbhm.data.entity.*
         MaintenanceReportEntity::class,
         CurfewRecordEntity::class,
         WorshipScheduleEntity::class,
-        BillingSettingsEntity::class
+        BillingSettingsEntity::class,
+        LeaveNoticeEntity::class
     ],
-    version = 2,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -41,6 +42,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun curfewRecordDao(): CurfewRecordDao
     abstract fun worshipScheduleDao(): WorshipScheduleDao
     abstract fun billingSettingsDao(): BillingSettingsDao
+    abstract fun leaveNoticeDao(): LeaveNoticeDao
 
     companion object {
         @Volatile

@@ -87,6 +87,12 @@ class Converters {
     fun toCurfewStatus(value: CurfewStatus?): String? = value?.name
 
     @TypeConverter
+    fun fromLeaveNoticeStatus(value: String?): LeaveNoticeStatus? = value?.let { LeaveNoticeStatus.valueOf(it) }
+
+    @TypeConverter
+    fun toLeaveNoticeStatus(value: LeaveNoticeStatus?): String? = value?.name
+
+    @TypeConverter
     fun fromStringList(value: String?): List<String>? = stringToList(value)
 
     @TypeConverter

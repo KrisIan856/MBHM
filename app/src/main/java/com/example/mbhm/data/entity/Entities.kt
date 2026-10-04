@@ -444,6 +444,8 @@ data class WorshipScheduleEntity(
     }
 }
 
+
+
 @Entity(tableName = "billing_settings")
 @TypeConverters(Converters::class)
 data class BillingSettingsEntity(

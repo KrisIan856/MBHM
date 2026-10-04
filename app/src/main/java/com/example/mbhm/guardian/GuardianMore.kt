@@ -162,18 +162,6 @@ fun GMore(onLogout: () -> Unit, showToast: (String) -> Unit) {
                         fontWeight = FontWeight.SemiBold
                     )
                     Toggle(
-                        label = "Payment Reminders",
-                        sub = "Remind boarders before due date",
-                        checked = true,
-                        onChange = { showToast("Preference saved") }
-                    )
-                    Toggle(
-                        label = "Overdue Alerts",
-                        sub = "Alert when payment is overdue",
-                        checked = true,
-                        onChange = { showToast("Preference saved") }
-                    )
-                    Toggle(
                         label = "Attendance Alerts",
                         sub = "Alert on absence threshold",
                         checked = true,

@@ -29,6 +29,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import android.net.Uri
+import android.widget.ImageView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -58,6 +61,7 @@ fun BPayments(
 ) {
     var selectedMonth by remember { mutableStateOf("Sep 2026") }
     var selectedFileName by remember { mutableStateOf<String?>(null) }
+    var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
     var showPreviewModal by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
@@ -66,7 +70,7 @@ fun BPayments(
     val currentRec = myPay.find { p -> p.period == selectedMonth }
     val history = myPay.filter { p -> p.period != selectedMonth }
 
-    val amountDue = boarder.monthlyRate
+    val amountDue = currentRec?.amount ?: boarder.monthlyRate
     val amountPaid = currentRec?.amountPaid ?: if (currentRec?.status == PayStatus.PAID) amountDue else 0
     val remainingBalance = (amountDue - amountPaid).coerceAtLeast(0)
 
@@ -76,6 +80,7 @@ fun BPayments(
         if (uri != null) {
             val fileName = context.fileNameOf(uri)
             selectedFileName = fileName
+            selectedFileUri = uri
             showPreviewModal = true
         }
     }
@@ -306,7 +311,7 @@ fun BPayments(
                                     .clip(RoundedCornerShape(10.dp))
                                     .background(C.danger)
                                     .clickable {
-                                        pickerLauncher.launch(arrayOf("image/jpeg", "image/jpg", "image/png", "application/pdf"))
+                                        pickerLauncher.launch(arrayOf("image/jpeg", "image/png"))
                                     }
                                     .padding(horizontal = 14.dp, vertical = 8.dp)
                             ) {
@@ -343,7 +348,7 @@ fun BPayments(
                             .background(C.primaryLt)
                             .border(1.dp, C.primary, RoundedCornerShape(12.dp))
                             .clickable {
-                                pickerLauncher.launch(arrayOf("image/jpeg", "image/jpg", "image/png", "application/pdf"))
+                                pickerLauncher.launch(arrayOf("image/jpeg", "image/png"))
                             }
                             .padding(vertical = 14.dp),
                         contentAlignment = Alignment.Center
@@ -444,34 +449,42 @@ fun BPayments(
                         .border(1.dp, C.border, RoundedCornerShape(10.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("🖼️", fontSize = 32.sp)
-                        Text(
-                            selectedFileName ?: "Selected Image",
-                            color = C.text,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(top = 4.dp)
+                    if (selectedFileUri != null) {
+                        AndroidView(
+                            factory = { ctx -> ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP } },
+                            update = { imageView -> imageView.setImageURI(selectedFileUri) },
+                            modifier = Modifier.fillMaxWidth().height(140.dp)
                         )
-                        Text(
-                            "Ready to upload for $selectedMonth",
-                            color = C.muted,
-                            fontSize = 11.sp
-                        )
+                    } else {
+                        Text("No image selected", color = C.muted, fontSize = 13.sp)
                     }
                 }
+                Text(
+                    selectedFileName ?: "Selected Image",
+                    color = C.text,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+                Text(
+                    "Ready to upload for $selectedMonth",
+                    color = C.muted,
+                    fontSize = 11.sp
+                )
             }
 
             ActionPair(
                 onCancel = {
                     showPreviewModal = false
                     selectedFileName = null
+                    selectedFileUri = null
                 },
                 onConfirm = {
                     val fn = selectedFileName ?: "payment_proof.jpg"
                     submitProof(fn)
                     showPreviewModal = false
                     selectedFileName = null
+                    selectedFileUri = null
                 },
                 confirmLabel = "Submit Proof"
             )

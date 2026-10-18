@@ -21,6 +21,9 @@ interface BoarderDao {
     @Query("DELETE FROM boarders")
     suspend fun deleteAll()
 
+    @Query("DELETE FROM boarders WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Query("SELECT * FROM boarders ORDER BY name")
     fun getAll(): Flow<List<BoarderEntity>>
 
@@ -32,6 +35,12 @@ interface BoarderDao {
 
     @Query("SELECT * FROM boarders WHERE room = :room ORDER BY name")
     fun getByRoom(room: String): Flow<List<BoarderEntity>>
+
+    @Query("SELECT COUNT(*) FROM boarders WHERE room = :room")
+    suspend fun countInRoom(room: String): Int
+
+    @Query("SELECT * FROM boarders WHERE LOWER(idNumber) = LOWER(:idNumber)")
+    suspend fun getByIdNumber(idNumber: String): BoarderEntity?
 
     @Query("SELECT * FROM boarders WHERE paymentStatus = :status")
     fun getByPaymentStatus(status: String): Flow<List<BoarderEntity>>
@@ -56,6 +65,9 @@ interface PaymentRecordDao {
 
     @Query("DELETE FROM payment_records")
     suspend fun deleteAll()
+
+    @Query("DELETE FROM payment_records WHERE id = :id")
+    suspend fun deleteById(id: String)
 
     @Query("SELECT * FROM payment_records ORDER BY period DESC")
     fun getAll(): Flow<List<PaymentRecordEntity>>
@@ -93,6 +105,9 @@ interface AttendanceSessionDao {
     @Query("DELETE FROM attendance_sessions")
     suspend fun deleteAll()
 
+    @Query("DELETE FROM attendance_sessions WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Query("SELECT * FROM attendance_sessions ORDER BY date DESC")
     fun getAll(): Flow<List<AttendanceSessionEntity>>
 
@@ -125,6 +140,9 @@ interface AttendanceRecordDao {
 
     @Query("DELETE FROM attendance_records")
     suspend fun deleteAll()
+
+    @Query("DELETE FROM attendance_records WHERE id = :id")
+    suspend fun deleteById(id: String)
 
     @Query("SELECT * FROM attendance_records WHERE sessionId = :sessionId")
     fun getBySession(sessionId: String): Flow<List<AttendanceRecordEntity>>
@@ -159,6 +177,9 @@ interface AnnouncementDao {
     @Query("DELETE FROM announcements")
     suspend fun deleteAll()
 
+    @Query("DELETE FROM announcements WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Query("SELECT * FROM announcements ORDER BY sentAt DESC")
     fun getAll(): Flow<List<AnnouncementEntity>>
 
@@ -189,8 +210,14 @@ interface VisitorEntryDao {
     @Query("DELETE FROM visitor_entries")
     suspend fun deleteAll()
 
+    @Query("DELETE FROM visitor_entries WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Query("SELECT * FROM visitor_entries ORDER BY date DESC, timeIn DESC")
     fun getAll(): Flow<List<VisitorEntryEntity>>
+
+    @Query("SELECT * FROM visitor_entries ORDER BY date DESC, timeIn DESC")
+    suspend fun getAllOnce(): List<VisitorEntryEntity>
 
     @Query("SELECT * FROM visitor_entries WHERE boarderId = :boarderId ORDER BY date DESC, timeIn DESC")
     fun getByBoarder(boarderId: String): Flow<List<VisitorEntryEntity>>
@@ -218,6 +245,9 @@ interface IncidentDao {
 
     @Query("DELETE FROM incidents")
     suspend fun deleteAll()
+
+    @Query("DELETE FROM incidents WHERE id = :id")
+    suspend fun deleteById(id: String)
 
     @Query("SELECT * FROM incidents ORDER BY timestamp DESC")
     fun getAll(): Flow<List<IncidentEntity>>
@@ -252,6 +282,9 @@ interface MaintenanceReportDao {
     @Query("DELETE FROM maintenance_reports")
     suspend fun deleteAll()
 
+    @Query("DELETE FROM maintenance_reports WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Query("SELECT * FROM maintenance_reports ORDER BY submittedAt DESC")
     fun getAll(): Flow<List<MaintenanceReportEntity>>
 
@@ -285,6 +318,9 @@ interface CurfewRecordDao {
     @Query("DELETE FROM curfew_records")
     suspend fun deleteAll()
 
+    @Query("DELETE FROM curfew_records WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Query("SELECT * FROM curfew_records WHERE boarderId = :boarderId ORDER BY date DESC")
     fun getByBoarder(boarderId: String): Flow<List<CurfewRecordEntity>>
 
@@ -316,6 +352,9 @@ interface WorshipScheduleDao {
 
     @Query("SELECT * FROM worship_schedule WHERE id = 'default'")
     fun observe(): Flow<WorshipScheduleEntity?>
+
+    @Query("DELETE FROM worship_schedule WHERE id = :id")
+    suspend fun deleteById(id: String)
 }
 
 @Dao
@@ -331,4 +370,7 @@ interface BillingSettingsDao {
 
     @Query("SELECT * FROM billing_settings WHERE id = 'default'")
     fun observe(): Flow<BillingSettingsEntity?>
+
+    @Query("DELETE FROM billing_settings WHERE id = :id")
+    suspend fun deleteById(id: String)
 }

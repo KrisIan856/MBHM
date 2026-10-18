@@ -1,6 +1,7 @@
 package com.example.mbhm.ui.components
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
@@ -26,6 +27,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,8 +55,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -75,6 +79,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -89,36 +94,41 @@ import com.example.mbhm.model.IncidentType
 import com.example.mbhm.model.PayStatus
 import com.example.mbhm.model.ReceiptStatus
 import com.google.zxing.BinaryBitmap
+import com.google.zxing.BarcodeFormat
 import com.google.zxing.DecodeHintType
+import com.google.zxing.EncodeHintType
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.HybridBinarizer
+import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
 // ─── Color tokens ─────────────────────────────────────────────────────────────
 
 object C {
-    val bg = Color(0xFFF5F2EE)
+    val bg = Color(0xFFF8FAFC)
     val card = Color(0xFFFFFFFF)
-    val primary = Color(0xFF8B7FC7)
-    val primaryLt = Color(0xFFEAE7F5)
-    val sage = Color(0xFF7E9478)
-    val sageLt = Color(0xFFE4EDE3)
-    val text = Color(0xFF2C2825)
-    val muted = Color(0xFF8A847E)
-    val border = Color(0xFFE2DDD9)
-    val danger = Color(0xFFB03030)
-    val dangerLt = Color(0xFFFDECEA)
-    val warn = Color(0xFFA07A28)
-    val warnLt = Color(0xFFFEF3E2)
-    val greenText = Color(0xFF3D7055)
-    val blueText = Color(0xFF3B6ACB)
-    val blueLt = Color(0xFFE8F0FF)
-    val blueBar = Color(0xFF6B9BF7)
-    val chevron = Color(0xFFC9C3BD)
-    val navIdle = Color(0xFFB0AAA4)
+    val primary = Color(0xFF4F46E5)
+    val primaryLt = Color(0xFFEEF2FF)
+    val sage = Color(0xFF10B981)
+    val sageLt = Color(0xFFECFDF5)
+    val text = Color(0xFF0F172A)
+    val muted = Color(0xFF64748B)
+    val border = Color(0xFFE2E8F0)
+    val danger = Color(0xFFEF4444)
+    val dangerLt = Color(0xFFFEF2F2)
+    val warn = Color(0xFFF59E0B)
+    val warnLt = Color(0xFFFFFBEB)
+    val greenText = Color(0xFF047857)
+    val blueText = Color(0xFF2563EB)
+    val blueLt = Color(0xFFEFF6FF)
+    val blueBar = Color(0xFF3B82F6)
+    val chevron = Color(0xFF94A3B8)
+    val navIdle = Color(0xFF94A3B8)
 }
 
 fun hexColor(value: String): Color {
@@ -151,18 +161,25 @@ fun android.content.Context.fileNameOf(uri: android.net.Uri): String {
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
 
+/** Picks a readable text color for any avatar background (light colors get dark text). */
+fun readableTextOn(color: Color): Color {
+    val luminance = 0.299f * color.red + 0.587f * color.green + 0.114f * color.blue
+    return if (luminance > 0.62f) Color(0xFF0F172A) else Color.White
+}
+
 @Composable
 fun Avatar(initials: String, color: String, size: Int = 40, modifier: Modifier = Modifier) {
+    val bg = hexColor(color)
     Box(
         modifier
             .size(size.dp)
             .clip(CircleShape)
-            .background(hexColor(color)),
+            .background(bg),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = initials,
-            color = C.text,
+            color = readableTextOn(bg),
             fontSize = if (size > 44) 18.sp else 13.sp,
             fontWeight = FontWeight.SemiBold
         )
@@ -187,8 +204,8 @@ private fun ChipLabel(text: String, bg: Color, fg: Color, modifier: Modifier = M
 fun PayChip(status: PayStatus, modifier: Modifier = Modifier) {
     when (status) {
         PayStatus.PAID -> ChipLabel("✓ Paid", C.sageLt, C.greenText, modifier)
-        PayStatus.PARTIAL -> ChipLabel("½ Partial", C.blueLt, C.blueText, modifier)
-        PayStatus.PENDING -> ChipLabel("⏳ Pending", C.warnLt, C.warn, modifier)
+        PayStatus.PARTIAL -> ChipLabel("½ Partial", C.primaryLt, C.primary, modifier)
+        PayStatus.PENDING -> ChipLabel("⏳ Pending", C.bg, C.muted, modifier)
         PayStatus.OVERDUE -> ChipLabel("⚠ Overdue", C.dangerLt, C.danger, modifier)
     }
 }
@@ -206,10 +223,10 @@ fun ReceiptChip(status: ReceiptStatus, modifier: Modifier = Modifier) {
 fun IncidentBadge(type: IncidentType, modifier: Modifier = Modifier) {
     when (type) {
         IncidentType.MISSED_CURFEW -> ChipLabel("🌙 Curfew", C.dangerLt, C.danger, modifier)
-        IncidentType.SOS -> ChipLabel("🆘 SOS", Color(0xFFFFE4E4), Color(0xFF9B0000), modifier)
+        IncidentType.SOS -> ChipLabel("🆘 SOS", Color(0xFFFEF2F2), Color(0xFFDC2626), modifier)
         IncidentType.MISSED_WORSHIP -> ChipLabel("📅 Worship", C.warnLt, C.warn, modifier)
-        IncidentType.MAINTENANCE -> ChipLabel("🔧 Maintenance", Color(0xFFEAF0F5), Color(0xFF3A6080), modifier)
-        IncidentType.OTHER -> ChipLabel("•• Other", Color(0xFFF0EAF5), Color(0xFF6B5FA8), modifier)
+        IncidentType.MAINTENANCE -> ChipLabel("🔧 Maintenance", Color(0xFFF0F9FF), Color(0xFF0284C7), modifier)
+        IncidentType.OTHER -> ChipLabel("•• Other", Color(0xFFF5F3FF), Color(0xFF7C3AED), modifier)
     }
 }
 
@@ -218,62 +235,26 @@ fun CurfewChip(status: CurfewStatus, modifier: Modifier = Modifier) {
     when (status) {
         CurfewStatus.COMPLIANT -> ChipLabel("✓ In", C.sageLt, C.greenText, modifier)
         CurfewStatus.LATE -> ChipLabel("⚠ Late", C.dangerLt, C.danger, modifier)
-        CurfewStatus.ABSENT -> ChipLabel("✕ Absent", Color(0xFFF5E4E4), Color(0xFF9B0000), modifier)
-        CurfewStatus.PENDING -> ChipLabel("⏳ Pending", Color(0xFFF0EEF8), Color(0xFF6B5FA8), modifier)
+        CurfewStatus.ABSENT -> ChipLabel("✕ Absent", Color(0xFFFEF2F2), Color(0xFFDC2626), modifier)
+        CurfewStatus.PENDING -> ChipLabel("⏳ Pending", Color(0xFFF1F5F9), Color(0xFF475569), modifier)
     }
 }
 
-// ─── QR Code display (deterministic pattern from a seed string) ──────────────
+// ─── QR Code display (real QR generated from content via ZXing) ──────────────
 
-private fun buildQrCells(seed: String): Array<BooleanArray> {
-    val grid = 21
-    val cells = Array(grid) { BooleanArray(grid) }
-
-    fun finder(row: Int, col: Int) {
-        for (r in 0 until 7) {
-            for (c in 0 until 7) {
-                val outer = r == 0 || r == 6 || c == 0 || c == 6
-                val inner = r in 2..4 && c in 2..4
-                cells[row + r][col + c] = outer || inner
-            }
-        }
-        for (i in -1..7) {
-            if (row + i in 0 until grid && col - 1 >= 0) cells[row + i][col - 1] = false
-            if (row + i in 0 until grid && col + 7 < grid) cells[row + i][col + 7] = false
-            if (col + i in 0 until grid && row - 1 >= 0) cells[row - 1][col + i] = false
-            if (col + i in 0 until grid && row + 7 < grid) cells[row + 7][col + i] = false
-        }
-    }
-
-    finder(0, 0)
-    finder(0, grid - 7)
-    finder(grid - 7, 0)
-
-    for (i in 8 until grid - 8) {
-        cells[6][i] = i % 2 == 0
-        cells[i][6] = i % 2 == 0
-    }
-
-    var h = 0
-    for (ch in seed) h = 31 * h + ch.code
-    for (r in 0 until grid) {
-        for (c in 0 until grid) {
-            val skip = (r < 9 && c < 9) || (r < 9 && c > grid - 9) ||
-                (r > grid - 9 && c < 9) || r == 6 || c == 6
-            if (skip) continue
-            h = 1664525 * h + 1013904223
-            cells[r][c] = (h ushr 31) == 1
-        }
-    }
-    return cells
+private fun buildQrCells(content: String): Array<BooleanArray> {
+    val hints = mapOf(
+        EncodeHintType.CHARACTER_SET to "UTF-8",
+        EncodeHintType.MARGIN to 4
+    )
+    val matrix = QRCodeWriter().encode(content, BarcodeFormat.QR_CODE, 0, 0, hints)
+    return Array(matrix.height) { r -> BooleanArray(matrix.width) { c -> matrix.get(c, r) } }
 }
 
 @Composable
 fun QRCodeDisplay(seed: String, size: Int = 200, modifier: Modifier = Modifier) {
     val cells = remember(seed) { buildQrCells(seed) }
-    val pad = 10f
-    val grid = 21
-    val cellPx = (size - pad * 2) / grid
+    val grid = cells.size
 
     Canvas(
         modifier
@@ -281,14 +262,17 @@ fun QRCodeDisplay(seed: String, size: Int = 200, modifier: Modifier = Modifier) 
             .clip(RoundedCornerShape(12.dp))
             .background(Color.White)
     ) {
+        val totalPx = this.size.minDimension
+        val cellPx = totalPx / grid
+        val dark = Color(0xFF0F172A)
+
         cells.forEachIndexed { r, row ->
             row.forEachIndexed { c, on ->
                 if (on) {
-                    drawRoundRect(
-                        color = Color(0xFF1A1A1A),
-                        topLeft = Offset(pad + c * cellPx, pad + r * cellPx),
-                        size = Size(cellPx - 0.5f, cellPx - 0.5f),
-                        cornerRadius = CornerRadius(0.8f)
+                    drawRect(
+                        color = dark,
+                        topLeft = Offset(c * cellPx, r * cellPx),
+                        size = Size(cellPx + 0.5f, cellPx + 0.5f)
                     )
                 }
             }
@@ -495,10 +479,10 @@ fun QRScanner(onScan: (String) -> Unit, onClose: () -> Unit, label: String? = nu
             modifier = Modifier
                 .size(270.dp)
                 .clip(RoundedCornerShape(20.dp))
-                .background(Color(0xFF0D0D1A))
+                .background(Color(0xFF0F172A))
                 .border(
                     2.dp,
-                    if (state == ScannerState.ACTIVE) scannerPrimary else Color(0xFFE8E3DC),
+                    if (state == ScannerState.ACTIVE) scannerPrimary else C.border,
                     RoundedCornerShape(20.dp)
                 )
         ) {
@@ -538,11 +522,11 @@ fun QRScanner(onScan: (String) -> Unit, onClose: () -> Unit, label: String? = nu
                 ScannerState.IDLE -> ScannerMessage("📷", "Tap below to start camera")
                 ScannerState.REQUESTING -> ScannerMessage("⏳", "Requesting camera…")
                 ScannerState.DENIED -> ScannerMessage(
-                    "🚫", "Camera access denied", Color(0xFFFF6B6B),
+                    "🚫", "Camera access denied", Color(0xFFEF4444),
                     "Allow camera in settings, then retry"
                 )
                 ScannerState.ERROR -> ScannerMessage(
-                    "⚠️", "Camera error", Color(0xFFFFA94D), errorMsg
+                    "⚠️", "Camera error", Color(0xFFF59E0B), errorMsg
                 )
                 ScannerState.SUCCESS -> Box(
                     Modifier
@@ -640,7 +624,9 @@ fun Header(
     right: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier.fillMaxWidth().background(C.card)) {
+    Column(
+        modifier = modifier.fillMaxWidth().background(C.card)
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -649,20 +635,21 @@ fun Header(
             if (onBack != null) {
                 Box(
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(36.dp)
                         .clip(CircleShape)
                         .background(C.bg)
+                        .border(1.dp, C.border, CircleShape)
                         .clickable { onBack() },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("‹", color = C.muted, fontSize = 20.sp, fontWeight = FontWeight.Medium)
+                    Text("‹", color = C.text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 }
             }
             Text(
                 text = title,
                 modifier = Modifier.weight(1f),
                 color = C.text,
-                fontSize = 17.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
             )
             right?.invoke()
@@ -686,7 +673,7 @@ fun NavBar(
         HorizontalDivider(thickness = 1.dp, color = C.border)
         Row(
             modifier = Modifier.fillMaxWidth()
-                .padding(top = 8.dp, bottom = 20.dp, start = 4.dp, end = 4.dp),
+                .padding(top = 6.dp, bottom = 20.dp, start = 4.dp, end = 4.dp),
             verticalAlignment = Alignment.Top
         ) {
         items.forEach { item ->
@@ -700,23 +687,23 @@ fun NavBar(
                     ) { onSelect(item.id) }
                     .padding(vertical = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+                verticalArrangement = Arrangement.spacedBy(3.dp)
             ) {
-                Text(item.icon, fontSize = 22.sp)
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(13.dp))
+                        .background(if (isActive) C.primaryLt else Color.Transparent),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(item.icon, fontSize = 20.sp)
+                }
                 Text(
                     item.label,
                     fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
                     color = if (isActive) C.primary else C.navIdle
                 )
-                if (isActive) {
-                    Box(
-                        Modifier
-                            .size(4.dp)
-                            .clip(CircleShape)
-                            .background(C.primary)
-                    )
-                }
             }
         }
         }
@@ -743,7 +730,7 @@ fun BottomSheet(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0x802C2825))
+                .background(Color(0x660F172A))
                 .pointerInput(Unit) { detectTapGestures { onClose() } },
             contentAlignment = Alignment.BottomCenter
         ) {
@@ -769,12 +756,42 @@ fun BottomSheet(
                         .clip(CircleShape)
                         .background(C.border)
                 )
-                if (title != null) {
-                    Text(title, color = C.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (title != null) {
+                        Text(
+                            title,
+                            color = C.text,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
+                        )
+                    } else {
+                        Box(Modifier.weight(1f))
+                    }
+                    CloseButton(onClose)
                 }
                 content()
             }
         }
+    }
+}
+
+@Composable
+private fun CloseButton(onClose: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(C.bg)
+            .border(1.dp, C.border, CircleShape)
+            .clickable { onClose() },
+        contentAlignment = Alignment.Center
+    ) {
+        Text("✕", color = C.muted, fontSize = 15.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -793,16 +810,21 @@ fun Modal(
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
         TransparentDialogWindow()
+        val configuration = LocalConfiguration.current
+        val maxModalHeight = (configuration.screenHeightDp - 120).dp
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0x802C2825))
+                .background(Color(0x660F172A))
                 .pointerInput(Unit) { detectTapGestures { onClose() } },
             contentAlignment = Alignment.Center
         ) {
             Column(
                 modifier = Modifier
                     .padding(20.dp)
+                    .fillMaxWidth()
+                    .heightIn(max = maxModalHeight)
+                    .verticalScroll(rememberScrollState())
                     .clip(RoundedCornerShape(20.dp))
                     .background(C.card)
                     .clickable(
@@ -812,8 +834,23 @@ fun Modal(
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                if (title != null) {
-                    Text(title, color = C.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (title != null) {
+                        Text(
+                            title,
+                            color = C.text,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
+                        )
+                    } else {
+                        Box(Modifier.weight(1f))
+                    }
+                    CloseButton(onClose)
                 }
                 content()
             }
@@ -854,19 +891,22 @@ fun Input(
 ) {
     Column(modifier) {
         if (label != null) FieldLabel(label)
+        val interactionSource = remember { MutableInteractionSource() }
+        val focused by interactionSource.collectIsFocusedAsState()
         BasicTextField(
             value = value,
             onValueChange = onChange,
             textStyle = TextStyle(color = C.text, fontSize = 14.sp),
             cursorBrush = SolidColor(C.primary),
             singleLine = true,
+            interactionSource = interactionSource,
             keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(C.bg)
-                .border(1.dp, C.border, RoundedCornerShape(10.dp))
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .clip(RoundedCornerShape(12.dp))
+                .background(C.card)
+                .border(1.dp, if (focused) C.primary else C.border, RoundedCornerShape(12.dp))
+                .padding(horizontal = 14.dp, vertical = 13.dp),
             decorationBox = { inner ->
                 if (value.isEmpty() && placeholder != null) {
                     Text(placeholder, color = C.muted, fontSize = 14.sp)
@@ -888,17 +928,20 @@ fun Textarea(
 ) {
     Column(modifier) {
         if (label != null) FieldLabel(label)
+        val interactionSource = remember { MutableInteractionSource() }
+        val focused by interactionSource.collectIsFocusedAsState()
         BasicTextField(
             value = value,
             onValueChange = onChange,
             textStyle = TextStyle(color = C.text, fontSize = 14.sp, lineHeight = 20.sp),
             cursorBrush = SolidColor(C.primary),
+            interactionSource = interactionSource,
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = (rows * 22).dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(C.bg)
-                .border(1.dp, C.border, RoundedCornerShape(10.dp))
+                .clip(RoundedCornerShape(12.dp))
+                .background(C.card)
+                .border(1.dp, if (focused) C.primary else C.border, RoundedCornerShape(12.dp))
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             decorationBox = { inner ->
                 if (value.isEmpty() && placeholder != null) {
@@ -929,11 +972,11 @@ fun Select(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(C.bg)
-                    .border(1.dp, C.border, RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(C.card)
+                    .border(1.dp, C.border, RoundedCornerShape(12.dp))
                     .clickable { expanded = true }
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                    .padding(horizontal = 14.dp, vertical = 13.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -971,7 +1014,11 @@ fun Toggle(
         label = "toggle"
     )
     Row(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { onChange(!checked) },
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f).padding(end = 16.dp)) {
@@ -991,10 +1038,6 @@ fun Toggle(
                 .height(24.dp)
                 .clip(RoundedCornerShape(50))
                 .background(if (checked) C.sage else C.border)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) { onChange(!checked) }
                 .padding(2.dp)
         ) {
             Box(
@@ -1004,6 +1047,29 @@ fun Toggle(
                     .clip(CircleShape)
                     .background(Color.White)
             )
+        }
+    }
+}
+
+// ─── Persistent settings toggle state ────────────────────────────────────────
+
+@Composable
+fun rememberPrefBoolean(key: String, default: Boolean): MutableState<Boolean> {
+    val context = LocalContext.current
+    val prefs = remember(context) {
+        context.getSharedPreferences("mbhm_settings", Context.MODE_PRIVATE)
+    }
+    val state = remember { mutableStateOf(prefs.getBoolean(key, default)) }
+    return remember(state) {
+        object : MutableState<Boolean> {
+            override var value: Boolean
+                get() = state.value
+                set(value) {
+                    state.value = value
+                    prefs.edit().putBoolean(key, value).apply()
+                }
+            override fun component1(): Boolean = value
+            override fun component2(): (Boolean) -> Unit = { value = it }
         }
     }
 }
@@ -1068,7 +1134,7 @@ fun SectionHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(title, color = C.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        Text(title.uppercase(), color = C.muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.7.sp)
         action?.invoke()
     }
 }
@@ -1078,13 +1144,27 @@ fun SectionHeader(
 @Composable
 fun EmptyState(icon: String, title: String, sub: String? = null, modifier: Modifier = Modifier) {
     Column(
-        modifier = modifier.fillMaxWidth().padding(vertical = 48.dp),
+        modifier = modifier.fillMaxWidth().padding(vertical = 44.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(icon, fontSize = 44.sp)
-        Text(title, color = C.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
+        Box(
+            modifier = Modifier
+                .size(78.dp)
+                .clip(CircleShape)
+                .background(C.primaryLt),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(icon, fontSize = 34.sp)
+        }
+        Text(title, color = C.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 14.dp))
         if (sub != null) {
-            Text(sub, color = C.muted, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
+            Text(
+                sub,
+                color = C.muted,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 4.dp, start = 24.dp, end = 24.dp)
+            )
         }
     }
 }
@@ -1144,7 +1224,7 @@ fun Toast(message: String, onDone: () -> Unit, modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("✓", color = Color.White, fontSize = 18.sp)
+        Text("✓", color = Color(0xFF10B981), fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Text(message, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
     }
 }
@@ -1180,9 +1260,9 @@ fun <T> ChipBar(
             ) {
                 Text(
                     label,
-                    color = if (selected) Color.White else C.muted,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
+                    color = if (selected) Color.White else C.text.copy(alpha = 0.72f),
+                    fontSize = 13.sp,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                     maxLines = 1
                 )
             }
@@ -1214,14 +1294,16 @@ fun StatCard(
             label,
             color = (textColor ?: C.muted).copy(alpha = if (textColor != null) 0.8f else 1f),
             fontSize = 12.sp,
-            fontWeight = FontWeight.Medium
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.4.sp
         )
         Text(
             value.toString(),
             color = textColor ?: C.text,
-            fontSize = 32.sp,
+            fontSize = 26.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(top = 4.dp)
+            maxLines = 1,
+            modifier = Modifier.padding(top = 6.dp)
         )
         if (sub != null) {
             Text(
@@ -1249,11 +1331,93 @@ fun PCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .shadow(2.dp, shape)
             .background(bg, shape)
             .then(if (borderColor != null) Modifier.border(1.dp, borderColor, shape) else Modifier)
             .padding(padding),
         content = content
     )
+}
+
+// ─── Data table ───────────────────────────────────────────────────────────────
+
+/**
+ * Column spec for [TableCard] / [TableRow].
+ * [weight] is the relative width inside the table; [end] right-aligns the column.
+ */
+data class TableColumn(val title: String, val weight: Float, val end: Boolean = false)
+
+/**
+ * Card-styled table with a muted uppercase header and hairline dividers.
+ * Use it when a list has to be read as numbers side by side (balances, history).
+ */
+@Composable
+fun TableCard(
+    columns: List<TableColumn>,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    PCard(modifier = modifier, padding = PaddingValues(0.dp)) {
+        Row(
+            Modifier.fillMaxWidth()
+                .background(C.bg)
+                .padding(horizontal = 14.dp, vertical = 9.dp)
+        ) {
+            columns.forEach { col ->
+                Text(
+                    col.title.uppercase(),
+                    color = C.muted,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.6.sp,
+                    textAlign = if (col.end) TextAlign.End else TextAlign.Start,
+                    maxLines = 1,
+                    modifier = Modifier.weight(col.weight)
+                )
+            }
+        }
+        HorizontalDivider(thickness = 1.dp, color = C.border)
+        Column(Modifier.fillMaxWidth(), content = content)
+    }
+}
+
+/**
+ * One table row. [cells] must match the order of [columns]; missing cells render blank.
+ * Set [divider] = false for the first row so lines never double up.
+ */
+@Composable
+fun TableRow(
+    columns: List<TableColumn>,
+    modifier: Modifier = Modifier,
+    divider: Boolean = true,
+    onClick: (() -> Unit)? = null,
+    cells: List<@Composable () -> Unit>
+) {
+    Column(modifier.fillMaxWidth()) {
+        if (divider) {
+            HorizontalDivider(
+                thickness = 1.dp,
+                color = C.border,
+                modifier = Modifier.padding(horizontal = 14.dp)
+            )
+        }
+        val rowModifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+
+        Row(rowModifier, verticalAlignment = Alignment.CenterVertically) {
+            columns.forEachIndexed { index, col ->
+                Box(
+                    Modifier.weight(col.weight),
+                    contentAlignment = if (col.end) Alignment.CenterEnd else Alignment.CenterStart
+                ) {
+                    val cell = cells.getOrNull(index)
+                    if (cell != null) cell()
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1298,11 +1462,24 @@ fun PrimaryButton(
     height: Int = 52,
     fontSize: Int = 15
 ) {
+    val shape = RoundedCornerShape(radius.dp)
     Box(
         modifier = modifier
             .height(height.dp)
-            .clip(RoundedCornerShape(radius.dp))
-            .background(bg.copy(alpha = if (enabled) 1f else 0.4f))
+            .shadow(4.dp, shape)
+            .clip(shape)
+            .background(
+                if (bg == C.primary && enabled) {
+                    androidx.compose.ui.graphics.Brush.linearGradient(
+                        listOf(bg, Color(0xFF3730A3))
+                    )
+                } else {
+                    androidx.compose.ui.graphics.Brush.linearGradient(
+                        listOf(bg.copy(alpha = if (enabled) 1f else 0.4f),
+                               bg.copy(alpha = if (enabled) 1f else 0.4f))
+                    )
+                }
+            )
             .clickable(enabled = enabled) { onClick() },
         contentAlignment = Alignment.Center
     ) {
@@ -1322,21 +1499,254 @@ fun SecondaryButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     bg: Color = C.card,
-    textColor: Color = C.muted,
+    textColor: Color = C.text,
     borderColor: Color? = C.border,
     radius: Int = 12,
     height: Int = 48,
-    fontSize: Int = 14
+    fontSize: Int = 14,
+    enabled: Boolean = true
 ) {
     val shape = RoundedCornerShape(radius.dp)
     Box(
         modifier = modifier
             .height(height.dp)
-            .background(bg, shape)
+            .shadow(1.dp, shape)
+            .background(bg.copy(alpha = if (enabled) 1f else 0.4f), shape)
             .then(if (borderColor != null) Modifier.border(BorderStroke(1.dp, borderColor), shape) else Modifier)
-            .clickable { onClick() },
+            .clickable(enabled = enabled) { onClick() },
         contentAlignment = Alignment.Center
     ) {
         Text(text, color = textColor, fontSize = fontSize.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    }
+}
+
+// --- Date helpers + range filter ---------------------------------------------
+
+private val MONTH_ABBRS = listOf("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+
+fun isoToday(): String = java.time.LocalDate.now().toString()
+
+fun parseIsoDate(value: String): Long? = runCatching {
+    java.time.LocalDate.parse(value)
+        .atStartOfDay(java.time.ZoneId.systemDefault())
+        .toInstant()
+        .toEpochMilli()
+}.getOrNull()
+
+fun prettyIso(value: String): String {
+    val date = runCatching { java.time.LocalDate.parse(value) }.getOrNull() ?: return value
+    return date.format(java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy", java.util.Locale.ENGLISH))
+}
+
+private fun monthIndex(name: String): Int = MONTH_ABBRS.indexOf(name.lowercase().take(3)) + 1
+
+private fun toEpoch(year: Int, month: Int, day: Int): Long? = runCatching {
+    java.time.LocalDate.of(year, month, day)
+        .atStartOfDay(java.time.ZoneId.systemDefault())
+        .toInstant()
+        .toEpochMilli()
+}.getOrNull()
+
+/**
+ * Parses the display style dates used across the app, e.g.
+ * "Oct 5, 2026 · 3:04 PM", "Oct 5 · 3:04 PM", "Just now", "Sep 15, 2026", "Oct 2026".
+ */
+fun parseDisplayDate(raw: String): Long? {
+    val text = raw.trim()
+    if (text.isEmpty()) return null
+    if (text.startsWith("Just now", ignoreCase = true)) return System.currentTimeMillis()
+
+    Regex("""^(\d{4})-(\d{2})-(\d{2})""").find(text)?.let { m ->
+        return toEpoch(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt())
+    }
+    Regex("""^([A-Za-z]{3,9})\s+(\d{1,2}),\s*(\d{4})""").find(text)?.let { m ->
+        val month = monthIndex(m.groupValues[1])
+        if (month > 0) return toEpoch(m.groupValues[3].toInt(), month, m.groupValues[2].toInt())
+    }
+    Regex("""^([A-Za-z]{3})\s+(\d{1,2})(?!\d)""").find(text)?.let { m ->
+        val month = monthIndex(m.groupValues[1])
+        if (month > 0) {
+            val today = java.time.LocalDate.now()
+            var year = today.year
+            val candidate = toEpoch(year, month, m.groupValues[2].toInt()) ?: return null
+            if (candidate > System.currentTimeMillis() + 3L * 24 * 60 * 60 * 1000) {
+                year -= 1
+                return toEpoch(year, month, m.groupValues[2].toInt())
+            }
+            return candidate
+        }
+    }
+    Regex("""^([A-Za-z]{3})\s+(\d{4})$""").find(text)?.let { m ->
+        val month = monthIndex(m.groupValues[1])
+        if (month > 0) return toEpoch(m.groupValues[2].toInt(), month, 1)
+    }
+    return null
+}
+
+/** True when [raw] falls inside the inclusive From/To range (empty bounds are ignored). */
+fun withinDateRange(raw: String, fromIso: String, toIso: String): Boolean {
+    if (fromIso.isEmpty() && toIso.isEmpty()) return true
+    val epoch = parseDisplayDate(raw) ?: return false
+    val from = if (fromIso.isEmpty()) Long.MIN_VALUE else (parseIsoDate(fromIso) ?: Long.MIN_VALUE)
+    val endOfDay = if (toIso.isEmpty()) {
+        Long.MAX_VALUE
+    } else {
+        (parseIsoDate(toIso) ?: Long.MAX_VALUE) + 24L * 60 * 60 * 1000 - 1
+    }
+    return epoch in from..endOfDay
+}
+
+/**
+ * Month pager used by both the guardian and boarder payment screens so the period a
+ * user is looking at is identical on each side. [periods] must be chronological.
+ */
+@Composable
+fun PayPeriodPager(
+    periods: List<String>,
+    selected: String,
+    onSelect: (String) -> Unit,
+    caption: String = "PAYMENT PERIOD"
+) {
+    if (periods.isEmpty()) return
+    val index = periods.indexOf(selected).coerceIn(0, periods.lastIndex)
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(C.card)
+            .border(1.dp, C.border, RoundedCornerShape(14.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(36.dp)
+                .clip(CircleShape)
+                .background(if (index > 0) C.bg else C.card)
+                .clickable(enabled = index > 0) { onSelect(periods[index - 1]) },
+            contentAlignment = Alignment.Center
+        ) {
+            Text("‹", color = if (index > 0) C.text else C.muted, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        }
+
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(caption, color = C.muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text(periods[index], color = C.text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        }
+
+        Box(
+            Modifier.size(36.dp)
+                .clip(CircleShape)
+                .background(if (index < periods.lastIndex) C.bg else C.card)
+                .clickable(enabled = index < periods.lastIndex) { onSelect(periods[index + 1]) },
+            contentAlignment = Alignment.Center
+        ) {
+            Text("›", color = if (index < periods.lastIndex) C.text else C.muted, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+/**
+ * Current wall-clock time, refreshed automatically every [intervalMs] milliseconds.
+ * Use it for any UI that depends on the time of day so it updates without a restart.
+ */
+@Composable
+fun rememberNow(intervalMs: Long = 15_000L): Long {
+    val now = remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(intervalMs) {
+        while (true) {
+            now.longValue = System.currentTimeMillis()
+            delay(intervalMs)
+        }
+    }
+    return now.longValue
+}
+
+/**
+ * Epoch millis for a calendar date plus a clock time, e.g. ("Oct 6, 2026", "6:30 PM").
+ * Returns null when either part cannot be parsed.
+ */
+fun windowMillis(dateLabel: String, timeLabel: String): Long? =
+    runCatching {
+        SimpleDateFormat("MMM d, yyyy h:mm a", Locale.ENGLISH)
+            .parse("$dateLabel $timeLabel")?.time
+    }.getOrNull()
+
+/** True when [now] falls inside the [dateLabel] window that ends at [endLabel]. */
+fun windowEnded(dateLabel: String, endLabel: String, now: Long): Boolean {
+    val end = windowMillis(dateLabel, endLabel) ?: return false
+    return now > end
+}
+
+@Composable
+fun DateRangeFilter(
+    from: String,
+    to: String,
+    onChange: (from: String, to: String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        DateFilterButton("FROM", from, Modifier.weight(1f)) { onChange(it, to) }
+        DateFilterButton("TO", to, Modifier.weight(1f)) { onChange(from, it) }
+        if (from.isNotEmpty() || to.isNotEmpty()) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(C.primaryLt)
+                    .clickable { onChange("", "") }
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            ) {
+                Text("Clear", color = C.primary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DateFilterButton(
+    label: String,
+    value: String,
+    modifier: Modifier,
+    onPick: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val shape = RoundedCornerShape(10.dp)
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(C.card)
+            .border(1.dp, C.border, shape)
+            .clickable {
+                val calendar = java.util.Calendar.getInstance()
+                if (value.isNotEmpty()) {
+                    parseIsoDate(value)?.let { calendar.timeInMillis = it }
+                }
+                android.app.DatePickerDialog(
+                    context,
+                    { _, year, month, day ->
+                        onPick(String.format(java.util.Locale.US, "%04d-%02d-%02d", year, month + 1, day))
+                    },
+                    calendar.get(java.util.Calendar.YEAR),
+                    calendar.get(java.util.Calendar.MONTH),
+                    calendar.get(java.util.Calendar.DAY_OF_MONTH)
+                ).show()
+            }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Column {
+            Text(label, color = C.muted, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+            Text(
+                if (value.isEmpty()) "Any date" else prettyIso(value),
+                color = C.text,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
+        }
     }
 }

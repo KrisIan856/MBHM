@@ -10,7 +10,7 @@ enum class IncidentType { MISSED_CURFEW, SOS, MISSED_WORSHIP, MAINTENANCE, OTHER
 
 enum class CurfewStatus { COMPLIANT, LATE, ABSENT, PENDING }
 
-enum class LeaveNoticeStatus { PENDING, APPROVED, REJECTED, COMPLETED }
+enum class LeaveNoticeStatus { PENDING, APPROVED, REJECTED, DEPARTED, COMPLETED }
 
 enum class PayMethod(val label: String) {
     CASH("Cash"),
@@ -43,7 +43,6 @@ enum class MaintStatus { OPEN, IN_PROGRESS, RESOLVED }
 
 data class EmergencyContact(
     val name: String,
-    val relationship: String,
     val phone: String,
     val secondaryPhone: String? = null,
     val address: String? = null
@@ -51,10 +50,30 @@ data class EmergencyContact(
 
 data class GuardianContact(
     val name: String,
-    val relationship: String,
     val phone: String,
     val altPhone: String? = null,
     val address: String? = null
+)
+
+/** A room the guardian manages, including its maximum boarder capacity. */
+data class HouseRoom(
+    val name: String,
+    val floor: String,
+    val maxCapacity: Int
+)
+
+/** A job / occupation option offered in the boarder form dropdown. */
+data class HouseJob(
+    val name: String
+)
+
+/** The single guardian profile shared with every boarder. */
+data class GuardianProfile(
+    val name: String = "",
+    val phone: String = "",
+    val email: String = "",
+    val houseName: String = "",
+    val houseAddress: String = ""
 )
 
 data class Boarder(
@@ -75,7 +94,8 @@ data class Boarder(
     val latePenaltyAmount: Int,
     val emergencyContact: EmergencyContact,
     val guardianContact: GuardianContact,
-    val job: String
+    val job: String,
+    val idNumber: String = ""
 ) {
     val firstName: String get() = name.substringBefore(' ')
 }
@@ -91,7 +111,11 @@ data class LeaveNotice(
     val destination: String,
     val additionalNotes: String? = null,
     val status: LeaveNoticeStatus = LeaveNoticeStatus.PENDING,
-    val submittedAt: String
+    val submittedAt: String,
+    val verifiedBy: String? = null,
+    val verifiedAt: String? = null,
+    val departedAt: String? = null,
+    val arrivedAt: String? = null
 )
 
 data class PaymentRecord(
@@ -199,6 +223,22 @@ data class WorshipSchedule(
     val absenceThreshold: Int
 )
 
+/**
+ * One absence-alert notice sent to a boarder's guardian.
+ *
+ * [absenceCountAtSend] is the boarder's absence total when the alert went out. A further
+ * alert is only warranted once that total rises, so a guardian who keeps missing without
+ * being re-notified every day and is re-notified as soon as they miss again.
+ */
+data class AbsenceAlertRecord(
+    val id: String,
+    val boarderId: String,
+    val absenceCountAtSend: Int,
+    val thresholdAtSend: Int,
+    val sentOn: String,
+    val sentAt: String? = null
+)
+
 data class ReminderSettings(
     val before3: Boolean = true,
     val before1: Boolean = true,
@@ -229,27 +269,18 @@ data class GuardianDetails(
     val houseAddress: String = ""
 )
 
-data class BoarderDetails(
+/**
+ * Everything a guardian fills in when creating a boarder account.
+ * Only the boarder's basic info is collected here — the guardian issues
+ * the ID number and creates the password.
+ */
+data class NewBoarderInput(
     val name: String = "",
+    val idNumber: String = "",
     val room: String = "",
     val floor: String = "",
-    val phone: String = "",
-    val email: String = "",
-    val joinDate: String = "",
-    val monthlyRate: String = "",
-    val dueDay: String = "5",
-    val gracePeriodDays: String = "5",
-    val latePenaltyType: String = "FLAT",
-    val latePenaltyAmount: String = "0",
     val job: String = "",
-    val emergencyContactName: String = "",
-    val emergencyContactRelationship: String = "",
-    val emergencyContactPhone: String = "",
-    val emergencyContactSecondaryPhone: String = "",
-    val emergencyContactAddress: String = "",
-    val guardianContactName: String = "",
-    val guardianContactRelationship: String = "",
-    val guardianContactPhone: String = "",
-    val guardianContactAltPhone: String = "",
-    val guardianContactAddress: String = ""
+    val monthlyRate: String = "",
+    val password: String = "",
+    val confirm: String = ""
 )

@@ -18,9 +18,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,20 +40,28 @@ import com.example.mbhm.model.Announcement
 import com.example.mbhm.model.AttendanceRecord
 import com.example.mbhm.model.Boarder
 import com.example.mbhm.model.PayStatus
+import com.example.mbhm.model.currentPeriod
+import com.example.mbhm.model.monthAccount
 import com.example.mbhm.model.PaymentRecord
 import com.example.mbhm.model.Priority
+import com.example.mbhm.ui.components.ActionPair
 import com.example.mbhm.ui.components.Avatar
 import com.example.mbhm.ui.components.C
 import com.example.mbhm.ui.components.EmptyState
+import com.example.mbhm.ui.components.Modal
 import com.example.mbhm.ui.components.NavBar
 import com.example.mbhm.ui.components.NavItem
+import com.example.mbhm.ui.components.PCard
 import com.example.mbhm.ui.components.QRCodeDisplay
 import com.example.mbhm.ui.components.ScrollBody
 import com.example.mbhm.ui.components.SectionHeader
 import com.example.mbhm.ui.components.Toast
 import com.example.mbhm.ui.components.money
+import com.example.mbhm.ui.components.isoToday
+import com.example.mbhm.ui.components.rememberPrefBoolean
+import com.example.mbhm.ui.components.withinDateRange
 import com.example.mbhm.data.entity.UserEntity
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 @Composable
 fun BoarderApp(
@@ -61,33 +71,77 @@ fun BoarderApp(
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
+    val scope = rememberCoroutineScope()
     var tab by remember { mutableStateOf("home") }
+    var announcementsOpen by remember { mutableStateOf(false) }
+    var pendingScreen by remember { mutableStateOf<String?>(null) }
 
     BackHandler {
-        if (tab != "home") {
+        if (announcementsOpen) {
+            announcementsOpen = false
+        } else if (tab != "home") {
             tab = "home"
         } else {
             activity?.moveTaskToBack(true)
         }
     }
     val boarder = remember { mutableStateOf<com.example.mbhm.model.Boarder?>(null) }
-    val payments = remember { mutableStateOf<List<com.example.mbhm.model.PaymentRecord>>(emptyList()) }
-    val attnRecords = remember { mutableStateOf<List<com.example.mbhm.model.AttendanceRecord>>(emptyList()) }
-    val announcements = remember { mutableStateOf<List<com.example.mbhm.model.Announcement>>(emptyList()) }
-    val maintenance = remember { mutableStateOf<List<com.example.mbhm.model.MaintenanceReport>>(emptyList()) }
-    val curfew = remember { mutableStateOf<List<com.example.mbhm.model.CurfewRecord>>(emptyList()) }
+    val payments by appRepository.getPaymentsByBoarder(user.boarderId ?: "").collectAsState(initial = emptyList())
+    val attnRecords by appRepository.getAttendanceByBoarder(user.boarderId ?: "").collectAsState(initial = emptyList())
+    val maintenance by appRepository.getMaintenanceByBoarder(user.boarderId ?: "").collectAsState(initial = emptyList())
+    val announcements by appRepository.getAllAnnouncements().collectAsState(initial = emptyList())
+    val incidents by appRepository.getAllIncidents().collectAsState(initial = emptyList())
+    val sessions by appRepository.getAllAttendanceSessions().collectAsState(initial = emptyList())
+    val schedule by appRepository.observeWorshipSchedule().collectAsState(initial = null)
+    val absenceAlerts by appRepository.getAllAbsenceAlerts().collectAsState(initial = emptyList())
     var toast by remember { mutableStateOf<String?>(null) }
+
+    fun go(target: String, screen: String? = null) {
+        pendingScreen = screen
+        announcementsOpen = false
+        tab = target
+    }
 
     val boarderId = user.boarderId
 
     LaunchedEffect(boarderId) {
         if (boarderId == null) return@LaunchedEffect
         boarder.value = appRepository.getBoarderById(boarderId)
-        payments.value = appRepository.getPaymentsByBoarder(boarderId).first()
-        attnRecords.value = appRepository.getAttendanceByBoarder(boarderId).first()
-        maintenance.value = appRepository.getMaintenanceByBoarder(boarderId).first()
-        curfew.value = appRepository.getCurfewByBoarder(boarderId).first()
-        announcements.value = appRepository.getAllAnnouncements().first()
+    }
+
+    fun updateBoarder(b: com.example.mbhm.model.Boarder) {
+        boarder.value = b
+        scope.launch { appRepository.updateBoarder(b) }
+    }
+
+    fun sendSos() {
+        val id = boarderId ?: return
+        scope.launch {
+            appRepository.insertIncident(
+                com.example.mbhm.model.Incident(
+                    id = "sos" + System.currentTimeMillis(),
+                    type = com.example.mbhm.model.IncidentType.SOS,
+                    boarderId = id,
+                    title = "SOS Alert",
+                    description = "${boarder.value?.name ?: "A boarder"} triggered an emergency SOS.",
+                    timestamp = java.text.SimpleDateFormat("MMM d, yyyy · h:mm a", java.util.Locale.ENGLISH).format(java.util.Date()),
+                    resolved = false
+                )
+            )
+        }
+    }
+
+    val setPayments: (List<com.example.mbhm.model.PaymentRecord>) -> Unit = { list ->
+        scope.launch { appRepository.upsertPayments(list) }
+    }
+    val setAttnRecords: (List<com.example.mbhm.model.AttendanceRecord>) -> Unit = { list ->
+        scope.launch { appRepository.upsertAttendanceRecords(list) }
+    }
+    val setAnnouncements: (List<com.example.mbhm.model.Announcement>) -> Unit = { list ->
+        scope.launch { appRepository.upsertAnnouncements(list) }
+    }
+    val setMaintenance: (List<com.example.mbhm.model.MaintenanceReport>) -> Unit = { list ->
+        scope.launch { appRepository.upsertMaintenanceReports(list) }
     }
 
     val navItems = listOf(
@@ -102,13 +156,45 @@ fun BoarderApp(
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
                 val b = boarder.value
-                if (b != null) {
+                if (b != null && announcementsOpen) {
+                    BAnnouncements(
+                        boarder = b,
+                        announcements = announcements,
+                        setAnnouncements = setAnnouncements,
+                        onBack = { announcementsOpen = false }
+                    )
+                } else if (b != null) {
                     when (tab) {
-                        "home" -> BHome(b, payments.value, announcements.value, attnRecords.value, onTabChange = { tab = it }, showToast = { toast = it })
-                        "payments" -> BPayments(b, payments.value, setPayments = { payments.value = it }, showToast = { toast = it })
-                        "attendance" -> BAttendance(b, attnRecords.value, setAttnRecords = { attnRecords.value = it }, showToast = { toast = it })
-                        "security" -> BSecurity(b, announcements.value, setAnnouncements = { announcements.value = it }, maintenance.value, setMaintenance = { maintenance.value = it }, curfew.value, setCurfew = { curfew.value = it }, showToast = { toast = it })
-                        "more" -> BMore(b, onLogout, showToast = { toast = it })
+                        "home" -> BHome(
+                            boarder = b,
+                            payments = payments,
+                            announcements = announcements,
+                            attnRecords = attnRecords,
+                            onNavigate = ::go,
+                            onAnnouncements = { announcementsOpen = true },
+                            onSendSos = ::sendSos,
+                            showToast = { toast = it }
+                        )
+                        "payments" -> BPayments(b, payments, setPayments = setPayments, showToast = { toast = it })
+                        "attendance" -> BAttendance(
+                            boarder = b,
+                            sessions = sessions,
+                            attnRecords = attnRecords,
+                            startScreen = pendingScreen ?: "main",
+                            showToast = { toast = it },
+                            schedule = schedule,
+                            absenceAlerts = absenceAlerts
+                        )
+                        "security" -> BSecurity(
+                            boarder = b,
+                            startScreen = pendingScreen ?: "overview",
+                            maintenance = maintenance,
+                            setMaintenance = setMaintenance,
+                            onBoarderUpdate = ::updateBoarder,
+                            onSendSos = ::sendSos,
+                            showToast = { toast = it }
+                        )
+                        "more" -> BMore(b, onBoarderUpdate = ::updateBoarder, onLogout = onLogout, showToast = { toast = it })
                     }
                 } else {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -122,7 +208,7 @@ fun BoarderApp(
                     }
                 }
             }
-            NavBar(navItems, tab, onSelect = { tab = it })
+            NavBar(navItems, tab, onSelect = { pendingScreen = null; tab = it })
         }
         toast?.let { msg ->
             Toast(msg, onDone = { toast = null }, Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = 96.dp))
@@ -136,39 +222,86 @@ fun BHome(
     payments: List<PaymentRecord>,
     announcements: List<Announcement>,
     attnRecords: List<AttendanceRecord>,
-    onTabChange: (String) -> Unit,
+    onNavigate: (tab: String, screen: String?) -> Unit,
+    onAnnouncements: () -> Unit,
+    onSendSos: () -> Unit,
     showToast: (String) -> Unit
 ) {
     val myAnn = announcements.filter { a -> a.isFor(boarder.id) }
     val unread = myAnn.filter { a -> !a.readBy.contains(boarder.id) }
+    val todayIso = isoToday()
+    val todayAnn = myAnn.filter { a -> withinDateRange(a.sentAt, todayIso, todayIso) }
+    val sortedAnn = myAnn.sortedWith(
+        compareByDescending<Announcement> { withinDateRange(it.sentAt, todayIso, todayIso) }
+            .thenByDescending { !it.readBy.contains(boarder.id) }
+    )
 
-    val payBg = when (boarder.paymentStatus) {
+    // Same derived account as the payments screen and the guardian's view, so the home
+    // summary can never contradict what the boarder sees on their payment page.
+    val myPay = payments.filter { it.boarderId == boarder.id }
+    val homePeriod = remember { currentPeriod() }
+    val homeAccount = remember(boarder, myPay, homePeriod) {
+        monthAccount(boarder, myPay, homePeriod)
+    }
+
+    val payBg = when (homeAccount.status) {
         PayStatus.PAID -> C.sage
         PayStatus.PENDING -> C.primary
         else -> C.danger
     }
 
+    val monthLabel = homePeriod
+    val dueLabel = remember(boarder.dueDay) {
+        java.text.SimpleDateFormat("MMM", java.util.Locale.US).format(java.util.Date()) + " ${boarder.dueDay}"
+    }
+    var showSosConfirm by remember { mutableStateOf(false) }
+
     ScrollBody(
         padding = PaddingValues(horizontal = 16.dp, vertical = 20.dp),
         spacing = 16
     ) {
+        val greeting = remember {
+            val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+            when {
+                hour < 12 -> "Good morning"
+                hour < 17 -> "Good afternoon"
+                else -> "Good evening"
+            }
+        }
         Row(
             Modifier.fillMaxWidth().padding(top = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column {
-                Text(
-                    "Hi, ${boarder.name.split(' ')[0]}! 👋",
-                    color = C.text,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "$greeting, ${boarder.name.split(' ')[0]}! 👋",
+                        color = C.text,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Box(
+                        Modifier.clip(RoundedCornerShape(50))
+                            .background(C.primaryLt)
+                            .padding(horizontal = 10.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            "Boarder",
+                            color = C.primary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
                 Text(
                     "Room ${boarder.room} · Casa Marigold",
                     color = C.muted,
                     fontSize = 14.sp,
-                    modifier = Modifier.padding(top = 2.dp)
+                    modifier = Modifier.padding(top = 4.dp)
                 )
             }
             Box {
@@ -193,12 +326,172 @@ fun BHome(
             }
         }
 
+        if (rememberPrefBoolean("notif_announcement_alerts", true).value) {
+        Column(Modifier.fillMaxWidth()) {
+            SectionHeader(
+                    title = if (todayAnn.isNotEmpty()) "Today's Announcement" else "Announcement",
+                action = {
+                    Text(
+                        "See all →",
+                        color = C.primary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clickable { onAnnouncements() }
+                    )
+                }
+            )
+            if (myAnn.isEmpty()) {
+                PCard(bg = C.bg, padding = PaddingValues(16.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onAnnouncements() },
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("📢", fontSize = 20.sp)
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "No announcement yet",
+                                color = C.text,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                "Your guardian posts updates here",
+                                color = C.muted,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+                        Text("›", color = C.muted, fontSize = 18.sp)
+                    }
+                }
+            } else {
+                Column(
+                    Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    sortedAnn.take(3).forEach { a ->
+                        val isRead = a.readBy.contains(boarder.id)
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(C.card)
+                                .border(
+                                    1.dp,
+                                    if (!isRead && a.priority == Priority.CRITICAL) C.danger.copy(alpha = 0.35f)
+                                    else C.border,
+                                    RoundedCornerShape(14.dp)
+                                )
+                                .clickable { onAnnouncements() }
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                if (a.priority == Priority.CRITICAL) "🔴" else "📢",
+                                fontSize = 18.sp
+                            )
+                            Column(Modifier.weight(1f)) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (!isRead) {
+                                        Box(
+                                            Modifier.size(7.dp)
+                                                .clip(CircleShape)
+                                                .background(C.primary)
+                                        )
+                                    }
+                                    Text(
+                                        a.title,
+                                        color = C.text,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Text(
+                                    a.body,
+                                    color = C.muted,
+                                    fontSize = 12.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                                Text(
+                                    a.sentAt,
+                                    color = C.muted,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+                            if (!isRead) {
+                                Text("New", color = C.primary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        }
+
+        Column(Modifier.fillMaxWidth()) {
+            SectionHeader(title = "Quick Access")
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                QuickTile(
+                    icon = "📱",
+                    label = "Attendance QR",
+                    onClick = { onNavigate("attendance", "qr") },
+                    modifier = Modifier.weight(1f)
+                )
+                QuickTile(
+                    icon = "💳",
+                    label = "Payments",
+                    onClick = { onNavigate("payments", null) },
+                    modifier = Modifier.weight(1f)
+                )
+                QuickTile(
+                    icon = "📈",
+                    label = "My History",
+                    onClick = { onNavigate("attendance", "history") },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(top = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                QuickTile(
+                    icon = "🔧",
+                    label = "Maintenance",
+                    onClick = { onNavigate("security", "maintenance") },
+                    modifier = Modifier.weight(1f)
+                )
+                QuickTile(
+                    icon = "🛡️",
+                    label = "Security",
+                    onClick = { onNavigate("security", null) },
+                    modifier = Modifier.weight(1f)
+                )
+                QuickTile(
+                    icon = "📞",
+                    label = "Emergency",
+                    onClick = { onNavigate("security", "emergency-contact") },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
         Row(
             Modifier.fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
                 .background(C.card)
                 .border(1.dp, C.border, RoundedCornerShape(14.dp))
-                .clickable { onTabChange("attendance") }
+                .clickable { onNavigate("attendance", null) }
                 .padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -245,7 +538,7 @@ fun BHome(
                 .padding(20.dp)
         ) {
             Text(
-                "September 2026",
+                monthLabel,
                 color = Color.White.copy(alpha = 0.7f),
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium
@@ -261,14 +554,14 @@ fun BHome(
                         color = Color.White.copy(alpha = 0.8f),
                         fontSize = 14.sp
                     )
-                    Text(
-                        money(boarder.monthlyRate),
-                        color = Color.White,
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                if (boarder.paymentStatus == PayStatus.PAID) {
+Text(
+                    money(homeAccount.due),
+                    color = Color.White,
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+                if (homeAccount.isFullyPaid) {
                     Box(
                         Modifier.padding(bottom = 4.dp)
                             .clip(RoundedCornerShape(50))
@@ -292,7 +585,7 @@ fun BHome(
                     ) {
                         Text("Due", color = C.muted, fontSize = 10.sp)
                         Text(
-                            "Sep 10",
+                            dueLabel,
                             color = C.text,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold
@@ -300,13 +593,15 @@ fun BHome(
                     }
                 }
             }
-            if (boarder.paymentStatus != PayStatus.PAID) {
+            if (!homeAccount.isFullyPaid &&
+                rememberPrefBoolean("notif_upload_prompt", true).value
+            ) {
                 Box(
                     Modifier.fillMaxWidth()
                         .padding(top = 12.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .background(Color.White.copy(alpha = 0.2f))
-                        .clickable { onTabChange("payments") }
+                        .clickable { onNavigate("payments", null) }
                         .padding(vertical = 10.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -324,8 +619,8 @@ fun BHome(
             Modifier.fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
                 .background(C.dangerLt)
-                .border(1.dp, Color(0xFFF5C4C4), RoundedCornerShape(14.dp))
-                .clickable { showToast("🆘 SOS alert sent to guardian!") }
+                .border(1.dp, C.danger.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+                .clickable { showSosConfirm = true }
                 .padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -347,67 +642,74 @@ fun BHome(
             }
         }
 
-        if (unread.isNotEmpty()) {
-            Column {
-                SectionHeader(
-                    title = "Announcements (${unread.size} unread)",
-                    action = {
-                        Text(
-                            "See all",
-                            color = C.primary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.clickable { onTabChange("security") }
-                        )
-                    }
+    }
+
+    if (showSosConfirm) {
+        Modal(
+            open = showSosConfirm,
+            onClose = { showSosConfirm = false },
+            title = "Send Emergency SOS?"
+        ) {
+            Column(
+                Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("🆘", fontSize = 56.sp)
+                Text(
+                    "This will immediately alert the house guardian of an emergency. Only use in genuine emergency situations.",
+                    color = C.muted,
+                    fontSize = 14.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.padding(top = 12.dp)
                 )
-                Column(
-                    Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    unread.take(2).forEach { a ->
-                        Row(
-                            Modifier.fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(C.card)
-                                .border(
-                                    1.dp,
-                                    if (a.priority == Priority.CRITICAL) Color(0xFFF5C4C4) else C.border,
-                                    RoundedCornerShape(14.dp)
-                                )
-                                .padding(16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Text(
-                                if (a.priority == Priority.CRITICAL) "🔴" else "📢",
-                                fontSize = 18.sp
-                            )
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    a.title,
-                                    color = C.text,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    a.body,
-                                    color = C.muted,
-                                    fontSize = 12.sp,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                )
-                                Text(
-                                    a.sentAt,
-                                    color = C.muted,
-                                    fontSize = 12.sp,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                )
-                            }
-                        }
-                    }
-                }
             }
+            ActionPair(
+                onCancel = { showSosConfirm = false },
+                onConfirm = {
+                    showSosConfirm = false
+                    onSendSos()
+                    showToast("🆘 SOS alert sent! Guardian has been notified.")
+                },
+                confirmLabel = "Send SOS Alert",
+                confirmDanger = true
+            )
         }
+    }
+}
+
+@Composable
+private fun QuickTile(
+    icon: String,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(C.card)
+            .border(1.dp, C.border, RoundedCornerShape(14.dp))
+            .clickable { onClick() }
+            .padding(vertical = 14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(C.primaryLt),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(icon, fontSize = 18.sp)
+        }
+        Text(
+            label,
+            color = C.text,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }

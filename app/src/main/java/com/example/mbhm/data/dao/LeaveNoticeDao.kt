@@ -27,6 +27,9 @@ interface LeaveNoticeDao {
     @Query("SELECT * FROM leave_notices ORDER BY submittedAt DESC")
     fun getAll(): Flow<List<LeaveNoticeEntity>>
 
+    @Query("SELECT * FROM leave_notices ORDER BY submittedAt DESC")
+    suspend fun getAllOnce(): List<LeaveNoticeEntity>
+
     @Query("SELECT * FROM leave_notices WHERE boarderId = :boarderId ORDER BY submittedAt DESC")
     fun getByBoarder(boarderId: String): Flow<List<LeaveNoticeEntity>>
 

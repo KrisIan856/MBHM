@@ -25,16 +25,15 @@ data class BoarderEntity(
     val latePenaltyType: PenaltyType,
     val latePenaltyAmount: Int,
     val emergencyContactName: String,
-    val emergencyContactRelationship: String,
     val emergencyContactPhone: String,
     val emergencyContactSecondaryPhone: String? = null,
     val emergencyContactAddress: String? = null,
     val guardianContactName: String,
-    val guardianContactRelationship: String,
     val guardianContactPhone: String,
     val guardianContactAltPhone: String? = null,
     val guardianContactAddress: String? = null,
-    val job: String
+    val job: String,
+    val idNumber: String = ""
 ) {
     val firstName: String get() = name.substringBefore(' ')
 
@@ -56,19 +55,18 @@ data class BoarderEntity(
         latePenaltyAmount = latePenaltyAmount,
         emergencyContact = EmergencyContact(
             name = emergencyContactName,
-            relationship = emergencyContactRelationship,
             phone = emergencyContactPhone,
             secondaryPhone = emergencyContactSecondaryPhone,
             address = emergencyContactAddress
         ),
         guardianContact = GuardianContact(
             name = guardianContactName,
-            relationship = guardianContactRelationship,
             phone = guardianContactPhone,
             altPhone = guardianContactAltPhone,
             address = guardianContactAddress
         ),
-        job = job
+        job = job,
+        idNumber = idNumber
     )
 
     companion object {
@@ -89,16 +87,71 @@ data class BoarderEntity(
             latePenaltyType = boarder.latePenaltyType,
             latePenaltyAmount = boarder.latePenaltyAmount,
             emergencyContactName = boarder.emergencyContact.name,
-            emergencyContactRelationship = boarder.emergencyContact.relationship,
             emergencyContactPhone = boarder.emergencyContact.phone,
             emergencyContactSecondaryPhone = boarder.emergencyContact.secondaryPhone,
             emergencyContactAddress = boarder.emergencyContact.address,
             guardianContactName = boarder.guardianContact.name,
-            guardianContactRelationship = boarder.guardianContact.relationship,
             guardianContactPhone = boarder.guardianContact.phone,
             guardianContactAltPhone = boarder.guardianContact.altPhone,
             guardianContactAddress = boarder.guardianContact.address,
-            job = boarder.job
+            job = boarder.job,
+            idNumber = boarder.idNumber
+        )
+    }
+}
+
+@Entity(tableName = "rooms")
+data class RoomEntity(
+    @PrimaryKey val name: String,
+    val floor: String,
+    val maxCapacity: Int
+) {
+    fun toDomain(): HouseRoom = HouseRoom(name = name, floor = floor, maxCapacity = maxCapacity)
+
+    companion object {
+        fun fromDomain(room: HouseRoom): RoomEntity = RoomEntity(
+            name = room.name,
+            floor = room.floor,
+            maxCapacity = room.maxCapacity
+        )
+    }
+}
+
+@Entity(tableName = "jobs")
+data class JobEntity(
+    @PrimaryKey val name: String
+) {
+    fun toDomain(): HouseJob = HouseJob(name = name)
+
+    companion object {
+        fun fromDomain(job: HouseJob): JobEntity = JobEntity(name = job.name)
+    }
+}
+
+@Entity(tableName = "guardian_profile")
+data class GuardianProfileEntity(
+    @PrimaryKey val id: String = "default",
+    val name: String,
+    val phone: String,
+    val email: String,
+    val houseName: String,
+    val houseAddress: String
+) {
+    fun toDomain(): GuardianProfile = GuardianProfile(
+        name = name,
+        phone = phone,
+        email = email,
+        houseName = houseName,
+        houseAddress = houseAddress
+    )
+
+    companion object {
+        fun fromDomain(profile: GuardianProfile): GuardianProfileEntity = GuardianProfileEntity(
+            name = profile.name,
+            phone = profile.phone,
+            email = profile.email,
+            houseName = profile.houseName,
+            houseAddress = profile.houseAddress
         )
     }
 }

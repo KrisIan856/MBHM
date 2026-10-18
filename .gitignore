@@ -13,3 +13,6 @@
 .externalNativeBuild
 .cxx
 local.properties
+/server/mbhm_server.db
+/server/mbhm_server.db-*
+/server/node_modules

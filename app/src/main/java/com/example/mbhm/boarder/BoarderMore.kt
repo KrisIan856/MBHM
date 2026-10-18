@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,19 +22,23 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+import com.example.mbhm.data.repository.AppRepository
 import com.example.mbhm.model.Boarder
 import com.example.mbhm.model.EmergencyContact
 import com.example.mbhm.model.GuardianContact
@@ -43,20 +48,26 @@ import com.example.mbhm.ui.components.ActionPair
 import com.example.mbhm.ui.components.Avatar
 import com.example.mbhm.ui.components.C
 import com.example.mbhm.ui.components.EmptyState
+import com.example.mbhm.ui.components.FieldLabel
 import com.example.mbhm.ui.components.Input
 import com.example.mbhm.ui.components.Modal
 import com.example.mbhm.ui.components.PCard
 import com.example.mbhm.ui.components.PrimaryButton
+import com.example.mbhm.ui.components.rememberPrefBoolean
 import com.example.mbhm.ui.components.RowItem
 import com.example.mbhm.ui.components.Screen
+import com.example.mbhm.ui.components.SectionHeader
 import com.example.mbhm.ui.components.Textarea
 import com.example.mbhm.ui.components.Toggle
 import com.example.mbhm.ui.components.money
+import com.example.mbhm.ui.sync.DeviceSyncScreen
+import kotlinx.coroutines.launch
 
 
 @Composable
 fun BMore(
     boarder: Boarder,
+    onBoarderUpdate: (Boarder) -> Unit,
     onLogout: () -> Unit,
     showToast: (String) -> Unit
 ) {
@@ -64,18 +75,21 @@ fun BMore(
     var currentBoarder by remember { mutableStateOf(boarder) }
     var screen by remember { mutableStateOf("main") }
     var showLogoutDialog by remember { mutableStateOf(false) }
-
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val appRepository = remember(context) { AppRepository.getInstance(context) }
+    val allLeaveNotices by appRepository.observeLeaveNotices().collectAsState(initial = emptyList())
+    val leaveNoticeList = allLeaveNotices.filter { it.boarderId == currentBoarder.id }
+    val guardianProfile by appRepository.observeGuardianProfile().collectAsState(initial = null)
 
     // Emergency & Guardian Edit State
     var showEditContactsModal by remember { mutableStateOf(false) }
     var editEmName by remember { mutableStateOf(currentBoarder.emergencyContact.name) }
-    var editEmRel by remember { mutableStateOf(currentBoarder.emergencyContact.relationship) }
     var editEmPhone by remember { mutableStateOf(currentBoarder.emergencyContact.phone) }
     var editEmSecPhone by remember { mutableStateOf(currentBoarder.emergencyContact.secondaryPhone ?: "") }
     var editEmAddress by remember { mutableStateOf(currentBoarder.emergencyContact.address ?: "") }
 
     var editGName by remember { mutableStateOf(currentBoarder.guardianContact.name) }
-    var editGRel by remember { mutableStateOf(currentBoarder.guardianContact.relationship) }
     var editGPhone by remember { mutableStateOf(currentBoarder.guardianContact.phone) }
     var editGAltPhone by remember { mutableStateOf(currentBoarder.guardianContact.altPhone ?: "") }
     var editGAddress by remember { mutableStateOf(currentBoarder.guardianContact.address ?: "") }
@@ -83,17 +97,167 @@ fun BMore(
 
 
     // Leave Notice State
-    var leaveNoticeList by remember { mutableStateOf<List<LeaveNotice>>(emptyList()) }
     var showLeaveModal by remember { mutableStateOf(false) }
     var leaveStep by remember { mutableStateOf("form") } // "form" or "review"
-    var lLeaveDate by remember { mutableStateOf("Sep 20, 2026") }
+    var lLeaveDate by remember {
+        mutableStateOf(java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.ENGLISH).format(java.util.Date()))
+    }
     var lDepTime by remember { mutableStateOf("08:00 AM") }
-    var lRetDate by remember { mutableStateOf("Sep 22, 2026") }
+    var lRetDate by remember {
+        mutableStateOf(java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.ENGLISH).format(java.util.Date()))
+    }
     var lRetTime by remember { mutableStateOf("06:00 PM") }
     var lReason by remember { mutableStateOf("") }
     var lDest by remember { mutableStateOf("") }
     var lNotes by remember { mutableStateOf("") }
     var leaveFormError by remember { mutableStateOf<String?>(null) }
+
+
+    // Edit Emergency & Guardian Contacts Modal (hoisted so it opens from any screen)
+    Modal(
+        open = showEditContactsModal,
+        onClose = { showEditContactsModal = false },
+        title = "Edit Contact Information"
+    ) {
+
+        Text("EMERGENCY CONTACT", color = C.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Input(label = "Emergency Contact Name", value = editEmName, onChange = { editEmName = it })
+        Input(label = "Contact Number", value = editEmPhone, onChange = { editEmPhone = it }, keyboardType = KeyboardType.Phone)
+        Input(label = "Secondary Number (optional)", value = editEmSecPhone, onChange = { editEmSecPhone = it }, keyboardType = KeyboardType.Phone)
+        Input(label = "Address (optional)", value = editEmAddress, onChange = { editEmAddress = it })
+
+        Spacer(Modifier.height(8.dp))
+        HorizontalDivider(color = C.border)
+        Spacer(Modifier.height(8.dp))
+
+        Text("GUARDIAN CONTACT", color = C.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Input(label = "Guardian Full Name", value = editGName, onChange = { editGName = it })
+        Input(label = "Guardian Contact Number", value = editGPhone, onChange = { editGPhone = it }, keyboardType = KeyboardType.Phone)
+        Input(label = "Alternative Number (optional)", value = editGAltPhone, onChange = { editGAltPhone = it }, keyboardType = KeyboardType.Phone)
+        Input(label = "Guardian Address (optional)", value = editGAddress, onChange = { editGAddress = it })
+
+        contactsError?.let { err ->
+            Text(err, color = C.danger, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        }
+
+
+        ActionPair(
+            onCancel = { showEditContactsModal = false },
+            onConfirm = {
+                if (editEmName.isBlank() || editEmPhone.isBlank()) {
+                    contactsError = "Please enter Emergency Contact Name and Number"
+                    return@ActionPair
+                }
+                if (editGName.isBlank() || editGPhone.isBlank()) {
+                    contactsError = "Please enter Guardian Name and Number"
+                    return@ActionPair
+                }
+                contactsError = null
+                val updated = currentBoarder.copy(
+                    emergencyContact = EmergencyContact(
+                        name = editEmName.trim(),
+                        phone = editEmPhone.trim(),
+                        secondaryPhone = editEmSecPhone.trim().ifEmpty { null },
+                        address = editEmAddress.trim().ifEmpty { null }
+                    ),
+                    guardianContact = GuardianContact(
+                        name = editGName.trim(),
+                        phone = editGPhone.trim(),
+                        altPhone = editGAltPhone.trim().ifEmpty { null },
+                        address = editGAddress.trim().ifEmpty { null }
+                    )
+                )
+                currentBoarder = updated
+                onBoarderUpdate(updated)
+                showEditContactsModal = false
+                showToast("Emergency & Guardian contact updated")
+            },
+            confirmLabel = "Save Contacts"
+        )
+
+    }
+
+
+    // Leave Notice Modal Form (Requirement 1.C)
+    Modal(
+        open = showLeaveModal,
+        onClose = { showLeaveModal = false },
+        title = if (leaveStep == "form") "Leave Notice Form" else "Review Leave Notice"
+    ) {
+        if (leaveStep == "form") {
+            DateField(label = "Leave Date", value = lLeaveDate, onPick = { lLeaveDate = it })
+            TimeField(label = "Expected Departure Time", value = lDepTime, onPick = { lDepTime = it })
+            DateField(label = "Expected Return Date", value = lRetDate, onPick = { lRetDate = it })
+            TimeField(label = "Expected Return Time", value = lRetTime, onPick = { lRetTime = it })
+            Input(label = "Reason for Leaving", value = lReason, onChange = { lReason = it }, placeholder = "e.g. Family gathering, Medical visit")
+            Input(label = "Destination", value = lDest, onChange = { lDest = it }, placeholder = "e.g. Davao City")
+            Textarea(value = lNotes, onChange = { lNotes = it }, label = "Additional Notes (optional)", rows = 2)
+
+            leaveFormError?.let { err ->
+                Text(err, color = C.danger, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+
+
+            ActionPair(
+                onCancel = { showLeaveModal = false },
+                onConfirm = {
+                    if (lReason.isBlank() || lDest.isBlank()) {
+                        leaveFormError = "Please enter reason for leaving and destination"
+                        return@ActionPair
+                    }
+                    leaveFormError = null
+                    leaveStep = "review"
+                },
+                confirmLabel = "Review Notice"
+            )
+
+        } else {
+            // Review step
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(C.bg)
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("PLEASE REVIEW YOUR LEAVE NOTICE", color = C.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                leaveReviewRow("Leave Date", "$lLeaveDate at $lDepTime")
+                leaveReviewRow("Expected Return", "$lRetDate at $lRetTime")
+                leaveReviewRow("Reason", lReason)
+                leaveReviewRow("Destination", lDest)
+                if (lNotes.isNotBlank()) {
+                    leaveReviewRow("Notes", lNotes)
+                }
+
+            }
+
+            ActionPair(
+                onCancel = { leaveStep = "form" },
+                onConfirm = {
+                    val newNotice = LeaveNotice(
+                        id = "ln" + System.currentTimeMillis(),
+                        boarderId = currentBoarder.id,
+                        leaveDate = lLeaveDate,
+                        expectedDepartureTime = lDepTime,
+                        expectedReturnDate = lRetDate,
+                        expectedReturnTime = lRetTime,
+                        reason = lReason,
+                        destination = lDest,
+                        additionalNotes = lNotes.ifBlank { null },
+                        status = LeaveNoticeStatus.PENDING,
+                        submittedAt = "Just now"
+                    )
+                    scope.launch { appRepository.leaveNotices.insert(newNotice) }
+                    showLeaveModal = false
+                    showToast("Leave notice successfully submitted")
+                },
+                confirmLabel = "Submit Leave Notice"
+            )
+
+        }
+
+    }
 
 
     if (screen == "leave_history") {
@@ -139,7 +303,7 @@ fun BMore(
                         notice = notice,
                         showToast = showToast,
                         onUpdate = { updated ->
-                            leaveNoticeList = leaveNoticeList.map { if (it.id == updated.id) updated else it }
+                            scope.launch { appRepository.leaveNotices.update(updated) }
                         }
                     )
                 }
@@ -235,13 +399,11 @@ fun BMore(
                         modifier = Modifier.clickable {
                             // Pre-fill the edit modal with all contact data
                             editEmName = currentBoarder.emergencyContact.name
-                            editEmRel = currentBoarder.emergencyContact.relationship
                             editEmPhone = currentBoarder.emergencyContact.phone
                             editEmSecPhone = currentBoarder.emergencyContact.secondaryPhone ?: ""
                             editEmAddress = currentBoarder.emergencyContact.address ?: ""
 
                             editGName = currentBoarder.guardianContact.name
-                            editGRel = currentBoarder.guardianContact.relationship
                             editGPhone = currentBoarder.guardianContact.phone
                             editGAltPhone = currentBoarder.guardianContact.altPhone ?: ""
                             editGAddress = currentBoarder.guardianContact.address ?: ""
@@ -252,7 +414,8 @@ fun BMore(
                 }
                 listOf(
                     "Phone" to currentBoarder.phone,
-                    "Email" to currentBoarder.email
+                    "Email" to currentBoarder.email,
+                    "House Guardian" to (guardianProfile?.phone?.ifBlank { null } ?: "N/A")
                 ).forEach { (label, value) ->
                     Row(
                         Modifier.fillMaxWidth().padding(top = 10.dp),
@@ -290,13 +453,11 @@ fun BMore(
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.clickable {
                             editEmName = currentBoarder.emergencyContact.name
-                            editEmRel = currentBoarder.emergencyContact.relationship
                             editEmPhone = currentBoarder.emergencyContact.phone
                             editEmSecPhone = currentBoarder.emergencyContact.secondaryPhone ?: ""
                             editEmAddress = currentBoarder.emergencyContact.address ?: ""
 
                             editGName = currentBoarder.guardianContact.name
-                            editGRel = currentBoarder.guardianContact.relationship
                             editGPhone = currentBoarder.guardianContact.phone
                             editGAltPhone = currentBoarder.guardianContact.altPhone ?: ""
                             editGAddress = currentBoarder.guardianContact.address ?: ""
@@ -309,7 +470,6 @@ fun BMore(
                 val em = currentBoarder.emergencyContact
                 listOf(
                     "Name" to em.name,
-                    "Relationship" to em.relationship,
                     "Contact Number" to em.phone,
                     "Secondary Number" to (em.secondaryPhone ?: "N/A"),
                     "Address" to (em.address ?: "N/A")
@@ -350,13 +510,11 @@ fun BMore(
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.clickable {
                             editEmName = currentBoarder.emergencyContact.name
-                            editEmRel = currentBoarder.emergencyContact.relationship
                             editEmPhone = currentBoarder.emergencyContact.phone
                             editEmSecPhone = currentBoarder.emergencyContact.secondaryPhone ?: ""
                             editEmAddress = currentBoarder.emergencyContact.address ?: ""
 
                             editGName = currentBoarder.guardianContact.name
-                            editGRel = currentBoarder.guardianContact.relationship
                             editGPhone = currentBoarder.guardianContact.phone
                             editGAltPhone = currentBoarder.guardianContact.altPhone ?: ""
                             editGAddress = currentBoarder.guardianContact.address ?: ""
@@ -369,7 +527,6 @@ fun BMore(
                 val gc = currentBoarder.guardianContact
                 listOf(
                     "Guardian Name" to gc.name,
-                    "Relationship" to gc.relationship,
                     "Contact Number" to gc.phone,
                     "Alternative Number" to (gc.altPhone ?: "N/A"),
                     "Guardian Address" to (gc.address ?: "N/A")
@@ -395,31 +552,98 @@ fun BMore(
     }
 
 
+    if (screen == "sync") {
+        DeviceSyncScreen(
+            appRepository = appRepository,
+            onBack = { screen = "main" },
+            showToast = showToast
+        )
+        return
+    }
+
+
     if (screen == "settings") {
 
         Screen(title = "Settings", onBack = { screen = "main" }) {
 
-            PCard {
-                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text(
-                        "Notifications",
-                        color = C.text,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Toggle(
-                        label = "Attendance Reminders",
-                        sub = "Alert before worship session starts",
-                        checked = true,
-                        onChange = { showToast("Notification settings updated") }
-                    )
-                    Toggle(
-                        label = "Announcement Alerts",
-                        sub = "Notify me of new announcements",
-                        checked = true,
-                        onChange = { showToast("Notification settings updated") }
-                    )
-                }
+            Text(
+                "Preferences save on this device and apply immediately.",
+                color = C.muted,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+
+            SettingsGroup(
+                title = "Attendance Settings",
+                tag = "ATTENDANCE",
+                tagBg = C.primaryLt,
+                tagFg = C.primary
+            ) {
+                val attendRem = rememberPrefBoolean("notif_attendance_reminders", true)
+                val absenceAlerts = rememberPrefBoolean("notif_absence_alerts", true)
+                val calendarColors = rememberPrefBoolean("notif_calendar_colors", true)
+                Toggle(
+                    label = "Session Reminders",
+                    sub = "Remind me before a worship session opens",
+                    checked = attendRem.value,
+                    onChange = { attendRem.value = it; showToast("Attendance setting saved") }
+                )
+                Toggle(
+                    label = "Absence Alerts",
+                    sub = "Warn me when I reach the absence threshold",
+                    checked = absenceAlerts.value,
+                    onChange = { absenceAlerts.value = it; showToast("Attendance setting saved") }
+                )
+                Toggle(
+                    label = "Calendar Present / Absent Colors",
+                    sub = "Color the calendar for days I logged in",
+                    checked = calendarColors.value,
+                    onChange = { calendarColors.value = it; showToast("Attendance setting saved") }
+                )
+            }
+
+            SettingsGroup(
+                title = "Payment Settings",
+                tag = "PAYMENT",
+                tagBg = C.sageLt,
+                tagFg = C.greenText
+            ) {
+                val payRem = rememberPrefBoolean("notif_payment_reminders", true)
+                val uploadPrompt = rememberPrefBoolean("notif_upload_prompt", true)
+                val historyPrompt = rememberPrefBoolean("notif_payment_history", true)
+                Toggle(
+                    label = "Payment Due Reminders",
+                    sub = "Remind me before my rent is due",
+                    checked = payRem.value,
+                    onChange = { payRem.value = it; showToast("Payment setting saved") }
+                )
+                Toggle(
+                    label = "Upload Prompt on Home",
+                    sub = "Show the upload-receipt shortcut on my rent card",
+                    checked = uploadPrompt.value,
+                    onChange = { uploadPrompt.value = it; showToast("Payment setting saved") }
+                )
+                Toggle(
+                    label = "Payment History Link",
+                    sub = "Show the payment history shortcut on Payments",
+                    checked = historyPrompt.value,
+                    onChange = { historyPrompt.value = it; showToast("Payment setting saved") }
+                )
+            }
+
+            SettingsGroup(
+                title = "Notifications",
+                tag = "GENERAL",
+                tagBg = C.warnLt,
+                tagFg = C.warn
+            ) {
+                val announceAlert = rememberPrefBoolean("notif_announcement_alerts", true)
+                Toggle(
+                    label = "Announcement Alerts",
+                    sub = "Notify me of every new announcement",
+                    checked = announceAlert.value,
+                    onChange = { announceAlert.value = it; showToast("Notification settings updated") }
+                )
             }
 
 
@@ -509,9 +733,15 @@ fun BMore(
                 onClick = { screen = "profile" }
             )
             RowItem(
+                icon = "🔄",
+                label = "Wireless Sync",
+                sub = "Shared database over Wi-Fi",
+                onClick = { screen = "sync" }
+            )
+            RowItem(
                 icon = "⚙️",
                 label = "Settings",
-                sub = "App preferences & notifications",
+                sub = "Payment, attendance & notification preferences",
                 onClick = { screen = "settings" }
             )
         }
@@ -554,155 +784,6 @@ fun BMore(
             )
         }
 
-
-        // Edit Emergency & Guardian Contacts Modal
-        Modal(
-            open = showEditContactsModal,
-            onClose = { showEditContactsModal = false },
-            title = "Edit Contact Information"
-        ) {
-
-            Text("EMERGENCY CONTACT", color = C.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            Input(label = "Emergency Contact Name", value = editEmName, onChange = { editEmName = it })
-            Input(label = "Relationship", value = editEmRel, onChange = { editEmRel = it })
-            Input(label = "Contact Number", value = editEmPhone, onChange = { editEmPhone = it }, keyboardType = KeyboardType.Phone)
-            Input(label = "Secondary Number (optional)", value = editEmSecPhone, onChange = { editEmSecPhone = it }, keyboardType = KeyboardType.Phone)
-            Input(label = "Address (optional)", value = editEmAddress, onChange = { editEmAddress = it })
-
-            Spacer(Modifier.height(8.dp))
-            HorizontalDivider(color = C.border)
-            Spacer(Modifier.height(8.dp))
-
-            Text("GUARDIAN CONTACT", color = C.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            Input(label = "Guardian Full Name", value = editGName, onChange = { editGName = it })
-            Input(label = "Relationship to Boarder", value = editGRel, onChange = { editGRel = it })
-            Input(label = "Guardian Contact Number", value = editGPhone, onChange = { editGPhone = it }, keyboardType = KeyboardType.Phone)
-            Input(label = "Alternative Number (optional)", value = editGAltPhone, onChange = { editGAltPhone = it }, keyboardType = KeyboardType.Phone)
-            Input(label = "Guardian Address (optional)", value = editGAddress, onChange = { editGAddress = it })
-
-            contactsError?.let { err ->
-                Text(err, color = C.danger, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            }
-
-
-            ActionPair(
-                onCancel = { showEditContactsModal = false },
-                onConfirm = {
-                    if (editEmName.isBlank() || editEmPhone.isBlank()) {
-                        contactsError = "Please enter Emergency Contact Name and Number"
-                        return@ActionPair
-                    }
-                    if (editGName.isBlank() || editGPhone.isBlank()) {
-                        contactsError = "Please enter Guardian Name and Number"
-                        return@ActionPair
-                    }
-                    contactsError = null
-                    currentBoarder = currentBoarder.copy(
-                        emergencyContact = EmergencyContact(
-                            name = editEmName.trim(),
-                            relationship = editEmRel.trim(),
-                            phone = editEmPhone.trim(),
-                            secondaryPhone = editEmSecPhone.trim().ifEmpty { null },
-                            address = editEmAddress.trim().ifEmpty { null }
-                        ),
-                        guardianContact = GuardianContact(
-                            name = editGName.trim(),
-                            relationship = editGRel.trim(),
-                            phone = editGPhone.trim(),
-                            altPhone = editGAltPhone.trim().ifEmpty { null },
-                            address = editGAddress.trim().ifEmpty { null }
-                        )
-                    )
-                    showEditContactsModal = false
-                    showToast("Emergency & Guardian contact updated")
-                },
-                confirmLabel = "Save Contacts"
-            )
-
-        }
-
-
-        // Leave Notice Modal Form (Requirement 1.C)
-        Modal(
-            open = showLeaveModal,
-            onClose = { showLeaveModal = false },
-            title = if (leaveStep == "form") "Leave Notice Form" else "Review Leave Notice"
-        ) {
-            if (leaveStep == "form") {
-                Input(label = "Leave Date", value = lLeaveDate, onChange = { lLeaveDate = it })
-                Input(label = "Expected Departure Time", value = lDepTime, onChange = { lDepTime = it })
-                Input(label = "Expected Return Date", value = lRetDate, onChange = { lRetDate = it })
-                Input(label = "Expected Return Time", value = lRetTime, onChange = { lRetTime = it })
-                Input(label = "Reason for Leaving", value = lReason, onChange = { lReason = it }, placeholder = "e.g. Family gathering, Medical visit")
-                Input(label = "Destination", value = lDest, onChange = { lDest = it }, placeholder = "e.g. Davao City")
-                Textarea(value = lNotes, onChange = { lNotes = it }, label = "Additional Notes (optional)", rows = 2)
-
-                leaveFormError?.let { err ->
-                    Text(err, color = C.danger, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                }
-
-
-                ActionPair(
-                    onCancel = { showLeaveModal = false },
-                    onConfirm = {
-                        if (lReason.isBlank() || lDest.isBlank()) {
-                            leaveFormError = "Please enter reason for leaving and destination"
-                            return@ActionPair
-                        }
-                        leaveFormError = null
-                        leaveStep = "review"
-                    },
-                    confirmLabel = "Review Notice"
-                )
-
-            } else {
-                // Review step
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(C.bg)
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text("PLEASE REVIEW YOUR LEAVE NOTICE", color = C.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    leaveReviewRow("Leave Date", "$lLeaveDate at $lDepTime")
-                    leaveReviewRow("Expected Return", "$lRetDate at $lRetTime")
-                    leaveReviewRow("Reason", lReason)
-                    leaveReviewRow("Destination", lDest)
-                    if (lNotes.isNotBlank()) {
-                        leaveReviewRow("Notes", lNotes)
-                    }
-
-                }
-
-                ActionPair(
-                    onCancel = { leaveStep = "form" },
-                    onConfirm = {
-                        val newNotice = LeaveNotice(
-                            id = "ln" + System.currentTimeMillis(),
-                            boarderId = currentBoarder.id,
-                            leaveDate = lLeaveDate,
-                            expectedDepartureTime = lDepTime,
-                            expectedReturnDate = lRetDate,
-                            expectedReturnTime = lRetTime,
-                            reason = lReason,
-                            destination = lDest,
-                            additionalNotes = lNotes.ifBlank { null },
-                            status = LeaveNoticeStatus.PENDING,
-                            submittedAt = "Just now"
-                        )
-                        leaveNoticeList = listOf(newNotice) + leaveNoticeList
-                        showLeaveModal = false
-                        showToast("Leave notice successfully submitted")
-                    },
-                    confirmLabel = "Submit Leave Notice"
-                )
-
-            }
-
-        }
-
     }
 }
 
@@ -730,7 +811,8 @@ fun LeaveNoticeCard(
         LeaveNoticeStatus.PENDING -> Triple("Pending", C.warnLt, C.warn)
         LeaveNoticeStatus.APPROVED -> Triple("Approved", C.sageLt, C.greenText)
         LeaveNoticeStatus.REJECTED -> Triple("Rejected", C.dangerLt, C.danger)
-        LeaveNoticeStatus.COMPLETED -> Triple("Completed", C.blueLt, C.blueText)
+        LeaveNoticeStatus.DEPARTED -> Triple("Out now", C.primaryLt, C.primary)
+        LeaveNoticeStatus.COMPLETED -> Triple("Arrived", C.blueLt, C.blueText)
     }
 
 
@@ -813,9 +895,13 @@ fun LeaveNoticeCard(
             modifier = Modifier.padding(top = 2.dp)
         )
 
+        notice.departedAt?.let { departed ->
+            TimelineRow(icon = "🚪", label = "Actually departed", value = departed, tint = C.primary)
+        }
+        notice.arrivedAt?.let { arrived ->
+            TimelineRow(icon = "🏠", label = "Actually arrived", value = arrived, tint = C.greenText)
+        }
 
-        // "I'm Leaving Now" button — only visible when leave notice is APPROVED
-        // (Requirement 1.C: boarder confirms they are actually leaving)
         if (notice.status == LeaveNoticeStatus.APPROVED) {
             Box(
                 Modifier
@@ -824,8 +910,12 @@ fun LeaveNoticeCard(
                     .clip(RoundedCornerShape(10.dp))
                     .background(C.primary)
                     .clickable {
-                        onUpdate(notice.copy(status = LeaveNoticeStatus.COMPLETED))
-                        showToast("✅ Your departure has been recorded. Safe travels!")
+                        val now = java.text.SimpleDateFormat(
+                            "MMM d, yyyy · h:mm a",
+                            java.util.Locale.ENGLISH
+                        ).format(java.util.Date())
+                        onUpdate(notice.copy(status = LeaveNoticeStatus.DEPARTED, departedAt = now))
+                        showToast("✅ Departure recorded at $now. Safe travels!")
                     }
                     .padding(vertical = 12.dp),
                 contentAlignment = Alignment.Center
@@ -841,7 +931,184 @@ fun LeaveNoticeCard(
             }
         }
 
+        if (notice.status == LeaveNoticeStatus.DEPARTED) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(C.primaryLt)
+                    .padding(vertical = 12.dp, horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("⏳", fontSize = 14.sp)
+                Text(
+                    "Out now — waiting for the guardian to confirm your arrival",
+                    color = C.primary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        if (notice.status == LeaveNoticeStatus.COMPLETED) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(C.sageLt)
+                    .padding(vertical = 12.dp, horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("🏠", fontSize = 14.sp)
+                Text(
+                    "Trip complete — your arrival was confirmed by the guardian",
+                    color = C.greenText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
 
     }
 
+}
+
+@Composable
+private fun TimelineRow(icon: String, label: String, value: String, tint: androidx.compose.ui.graphics.Color) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(icon, fontSize = 13.sp)
+        Text(label, color = C.muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+        Text(value, color = tint, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun DateField(label: String, value: String, onPick: (String) -> Unit) {
+    val context = LocalContext.current
+    val fmt = remember { java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.ENGLISH) }
+    val shape = RoundedCornerShape(12.dp)
+    Column(Modifier.fillMaxWidth()) {
+        FieldLabel(text = label)
+        Box(
+            Modifier.fillMaxWidth()
+                .clip(shape)
+                .background(C.card)
+                .border(1.dp, C.border, shape)
+                .clickable {
+                    val calendar = java.util.Calendar.getInstance()
+                    runCatching { fmt.parse(value) }.getOrNull()?.let { calendar.time = it }
+                    android.app.DatePickerDialog(
+                        context,
+                        { _, year, month, day ->
+                            val picked = java.util.Calendar.getInstance().apply {
+                                set(year, month, day)
+                            }
+                            onPick(fmt.format(picked.time))
+                        },
+                        calendar.get(java.util.Calendar.YEAR),
+                        calendar.get(java.util.Calendar.MONTH),
+                        calendar.get(java.util.Calendar.DAY_OF_MONTH)
+                    ).show()
+                }
+                .padding(horizontal = 14.dp, vertical = 14.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(value, color = C.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text("📅", fontSize = 16.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimeField(label: String, value: String, onPick: (String) -> Unit) {
+    val context = LocalContext.current
+    val fmt = remember { java.text.SimpleDateFormat("h:mm a", java.util.Locale.ENGLISH) }
+    val shape = RoundedCornerShape(12.dp)
+    Column(Modifier.fillMaxWidth()) {
+        FieldLabel(text = label)
+        Box(
+            Modifier.fillMaxWidth()
+                .clip(shape)
+                .background(C.card)
+                .border(1.dp, C.border, shape)
+                .clickable {
+                    val calendar = java.util.Calendar.getInstance()
+                    runCatching { fmt.parse(value) }.getOrNull()?.let { calendar.time = it }
+                    android.app.TimePickerDialog(
+                        context,
+                        { _, hour, minute ->
+                            val picked = java.util.Calendar.getInstance().apply {
+                                set(java.util.Calendar.HOUR_OF_DAY, hour)
+                                set(java.util.Calendar.MINUTE, minute)
+                            }
+                            onPick(fmt.format(picked.time))
+                        },
+                        calendar.get(java.util.Calendar.HOUR_OF_DAY),
+                        calendar.get(java.util.Calendar.MINUTE),
+                        false
+                    ).show()
+                }
+                .padding(horizontal = 14.dp, vertical = 14.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(value, color = C.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text("🕐", fontSize = 16.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsGroup(
+    title: String,
+    tag: String,
+    tagBg: Color,
+    tagFg: Color,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    PCard {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier.clip(RoundedCornerShape(50))
+                        .background(tagBg)
+                        .padding(horizontal = 10.dp, vertical = 3.dp)
+                ) {
+                    Text(tag, color = tagFg, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+                Text(
+                    title,
+                    color = C.text,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            content()
+        }
+    }
 }

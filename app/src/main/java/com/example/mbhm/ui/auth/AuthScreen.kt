@@ -22,6 +22,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Text
@@ -34,6 +36,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
@@ -42,12 +46,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mbhm.R
 import com.example.mbhm.data.entity.UserEntity
 import com.example.mbhm.data.repository.AppRepository
-import com.example.mbhm.model.BoarderDetails
 import com.example.mbhm.model.GuardianDetails
 import com.example.mbhm.model.Role
 import com.example.mbhm.ui.components.C
@@ -59,6 +63,11 @@ private enum class AuthMode {
     LOGIN,
     REGISTER,
     FORGOT
+}
+
+private fun roleLabel(role: Role): String = when (role) {
+    Role.BOARDER -> "Boarder"
+    Role.GUARDIAN -> "Guardian"
 }
 
 @Composable
@@ -90,19 +99,37 @@ fun AuthScreen(
             AuthMode.LOGIN -> LoginScreenContent(
                 error = errorMsg,
                 info = infoMsg,
-                onLogin = { username, password ->
+                onLogin = { username, password, accountType ->
                     errorMsg = null
                     infoMsg = null
                     if (username.isBlank() || password.isBlank()) {
-                        errorMsg = "Please enter username and password"
+                        errorMsg = if (accountType == Role.BOARDER) {
+                            "Please enter your ID number and password"
+                        } else {
+                            "Please enter username and password"
+                        }
+                        return@LoginScreenContent
+                    }
+                    val selectedType = accountType
+                    if (selectedType == null) {
+                        errorMsg = "Please select your account type (Boarder or Guardian)"
                         return@LoginScreenContent
                     }
                     scope.launch {
                         val user = appRepository.authenticateUser(username, password)
-                        if (user != null) {
-                            onLoginSuccess(user)
-                        } else {
-                            errorMsg = "Invalid username or password"
+                        when {
+                            user == null -> {
+                                errorMsg = if (selectedType == Role.BOARDER) {
+                                    "Invalid ID number or password"
+                                } else {
+                                    "Invalid username or password"
+                                }
+                            }
+                            user.role != selectedType -> {
+                                errorMsg = "This account is a ${roleLabel(user.role)} account. " +
+                                    "Select ${roleLabel(selectedType)} above and try again."
+                            }
+                            else -> onLoginSuccess(user)
                         }
                     }
                 },
@@ -124,12 +151,11 @@ fun AuthScreen(
                     infoMsg = null
                     mode = AuthMode.LOGIN
                 },
-                onRegister = { username, password, guardianDetails, boarderDetails, isGuardian ->
+                onRegister = { username, password, guardianDetails ->
                     errorMsg = null
                     infoMsg = null
                     scope.launch {
-                        val role = if (isGuardian) Role.GUARDIAN else Role.BOARDER
-                        val newUser = appRepository.registerUser(username, password, role, guardianDetails, boarderDetails)
+                        val newUser = appRepository.registerUser(username, password, guardianDetails)
                         if (newUser != null) {
                             onLoginSuccess(newUser)
                         } else {
@@ -153,7 +179,7 @@ fun AuthScreen(
 private fun LoginScreenContent(
     error: String?,
     info: String?,
-    onLogin: (String, String) -> Unit,
+    onLogin: (String, String, Role?) -> Unit,
     onRegisterClick: () -> Unit,
     onForgotClick: () -> Unit
 ) {
@@ -161,6 +187,7 @@ private fun LoginScreenContent(
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
     var rememberMe by remember { mutableStateOf(false) }
+    var accountType by remember { mutableStateOf<Role?>(null) }
 
     Column(
         modifier = Modifier
@@ -174,30 +201,100 @@ private fun LoginScreenContent(
             Spacer(Modifier.height(24.dp))
             Box(
                 modifier = Modifier
-                    .size(64.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(C.primary),
+                    .size(72.dp)
+                    .shadow(8.dp, RoundedCornerShape(22.dp))
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(
+                        Brush.linearGradient(
+                            listOf(C.primary, Color(0xFF3730A3))
+                        )
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                Text("🏠", fontSize = 32.sp)
+                Text("🏠", fontSize = 36.sp)
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(18.dp))
             Text(
-                text = "BOARDING HOUSE MANAGEMENT",
-                fontSize = 18.sp,
+                text = "BOARDING HOUSE",
+                fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
                 color = C.text,
-                letterSpacing = 0.5.sp
+                letterSpacing = 1.sp
             )
-            Spacer(Modifier.height(32.dp))
+            Text(
+                text = "MANAGEMENT HUB",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = C.primary,
+                letterSpacing = 3.sp,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = "Sign in to view attendance, payments and announcements",
+                fontSize = 13.sp,
+                color = C.muted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 12.dp)
+            )
+            Spacer(Modifier.height(28.dp))
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "SIGN IN AS",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = C.muted,
+                    letterSpacing = 0.5.sp
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    RoleOption(
+                        label = "Boarder",
+                        icon = "👤",
+                        selected = accountType == Role.BOARDER,
+                        onClick = { accountType = Role.BOARDER },
+                        modifier = Modifier.weight(1f)
+                    )
+                    RoleOption(
+                        label = "Guardian",
+                        icon = "🛡️",
+                        selected = accountType == Role.GUARDIAN,
+                        onClick = { accountType = Role.GUARDIAN },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                val selectedType = accountType
+                if (selectedType == null) {
+                    Text(
+                        text = "Choose the account type you registered with",
+                        fontSize = 12.sp,
+                        color = C.muted
+                    )
+                } else {
+                    Text(
+                        text = if (selectedType == Role.BOARDER) {
+                            "Signing in as Boarder — use the ID number given by your guardian"
+                        } else {
+                            "Signing in as Guardian"
+                        },
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = C.primary
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 AuthField(
-                    label = "USERNAME",
+                    label = if (accountType == Role.BOARDER) "ID NUMBER" else "USERNAME",
                     value = username,
-                    onValueChange = { username = it }
+                    onValueChange = { username = it },
+                    placeholder = if (accountType == Role.BOARDER) "e.g. MBH-0001" else null
                 )
                 AuthField(
                     label = "PASSWORD",
@@ -221,7 +318,7 @@ private fun LoginScreenContent(
                         text = error,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
-                        color = Color(0xFFD94F4F)
+                        color = C.danger
                     )
                 }
 
@@ -265,16 +362,20 @@ private fun LoginScreenContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp)
+                        .shadow(6.dp, RoundedCornerShape(14.dp))
                         .clip(RoundedCornerShape(14.dp))
-                        .background(C.primary)
-                        .clickable { onLogin(username, password) },
+                        .background(
+                            Brush.linearGradient(listOf(C.primary, Color(0xFF3730A3)))
+                        )
+                        .clickable { onLogin(username, password, accountType) },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "LOGIN",
+                        text = "Sign In",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = Color.White,
+                        letterSpacing = 0.5.sp
                     )
                 }
             }
@@ -285,7 +386,7 @@ private fun LoginScreenContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Don't have an account? ",
+                text = "Guardian? Create an account — ",
                 fontSize = 14.sp,
                 color = C.muted
             )
@@ -304,7 +405,7 @@ private fun LoginScreenContent(
 private fun RegisterScreenContent(
     apiError: String?,
     onBack: () -> Unit,
-    onRegister: (String, String, GuardianDetails?, BoarderDetails?, Boolean) -> Unit
+    onRegister: (String, String, GuardianDetails) -> Unit
 ) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -312,8 +413,6 @@ private fun RegisterScreenContent(
     var showPassword by remember { mutableStateOf(false) }
     var formError by remember { mutableStateOf<String?>(null) }
     var guardianDetails by remember { mutableStateOf(GuardianDetails()) }
-    var boarderDetails by remember { mutableStateOf(BoarderDetails()) }
-    var registerAsGuardian by remember { mutableStateOf(false) }
 
     val reqLen = password.length >= 6
     val reqUpper = password.any { it.isUpperCase() }
@@ -339,29 +438,18 @@ private fun RegisterScreenContent(
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            text = "Create Account",
+            text = "Create Guardian Account",
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
             color = C.text
         )
-        Spacer(Modifier.height(16.dp))
-
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            RoleOption(
-                label = "Boarder",
-                icon = "👤",
-                selected = !registerAsGuardian,
-                onClick = { registerAsGuardian = false },
-                modifier = Modifier.weight(1f)
-            )
-            RoleOption(
-                label = "Guardian",
-                icon = "🛡️",
-                selected = registerAsGuardian,
-                onClick = { registerAsGuardian = true },
-                modifier = Modifier.weight(1f)
-            )
-        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "Only guardians register here — you manage the boarding house and " +
+                "create the accounts (ID number + password) for your boarders.",
+            fontSize = 13.sp,
+            color = C.muted
+        )
         Spacer(Modifier.height(20.dp))
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(
@@ -397,176 +485,37 @@ private fun RegisterScreenContent(
         Spacer(Modifier.height(20.dp))
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(
-                text = if (registerAsGuardian) "GUARDIAN DETAILS" else "BOARDER DETAILS",
+                text = "GUARDIAN DETAILS",
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 color = C.muted,
                 letterSpacing = 0.5.sp
             )
-            if (registerAsGuardian) {
-                AuthField(
-                    label = "Full Name",
-                    value = guardianDetails.fullName,
-                    onValueChange = { guardianDetails = guardianDetails.copy(fullName = it) },
-                    placeholder = "Full name"
-                )
-                AuthField(
-                    label = "Phone Number",
-                    value = guardianDetails.phone,
-                    onValueChange = { guardianDetails = guardianDetails.copy(phone = it) },
-                    keyboardType = KeyboardType.Phone,
-                    placeholder = "0917XXXXXX"
-                )
-                AuthField(
-                    label = "House Name / Number",
-                    value = guardianDetails.houseName,
-                    onValueChange = { guardianDetails = guardianDetails.copy(houseName = it) },
-                    placeholder = "e.g. House 12, Brgy. San Antonio"
-                )
-                AuthField(
-                    label = "House Address",
-                    value = guardianDetails.houseAddress,
-                    onValueChange = { guardianDetails = guardianDetails.copy(houseAddress = it) },
-                    placeholder = "Full address"
-                )
-            } else {
-                AuthField(
-                    label = "Full Name",
-                    value = boarderDetails.name.ifEmpty { "Enter name" },
-                    onValueChange = { boarderDetails = boarderDetails.copy(name = it) },
-                    placeholder = "Full name"
-                )
-                AuthField(
-                    label = "Room",
-                    value = boarderDetails.room,
-                    onValueChange = { boarderDetails = boarderDetails.copy(room = it) },
-                    placeholder = "e.g. 101"
-                )
-                AuthField(
-                    label = "Floor",
-                    value = boarderDetails.floor,
-                    onValueChange = { boarderDetails = boarderDetails.copy(floor = it) },
-                    placeholder = "e.g. 1st Floor"
-                )
-                AuthField(
-                    label = "Phone Number",
-                    value = boarderDetails.phone,
-                    onValueChange = { boarderDetails = boarderDetails.copy(phone = it) },
-                    keyboardType = KeyboardType.Phone,
-                    placeholder = "0917XXXXXX"
-                )
-                AuthField(
-                    label = "Email Address",
-                    value = boarderDetails.email,
-                    onValueChange = { boarderDetails = boarderDetails.copy(email = it) },
-                    keyboardType = KeyboardType.Email,
-                    placeholder = "boarder@email.com"
-                )
-                AuthField(
-                    label = "Join Date",
-                    value = boarderDetails.joinDate,
-                    onValueChange = { boarderDetails = boarderDetails.copy(joinDate = it) },
-                    placeholder = "e.g. Sep 15, 2026"
-                )
-                AuthField(
-                    label = "Monthly Rate (₱)",
-                    value = boarderDetails.monthlyRate,
-                    onValueChange = { boarderDetails = boarderDetails.copy(monthlyRate = it) },
-                    keyboardType = KeyboardType.Number,
-                    placeholder = "e.g. 5000"
-                )
-                AuthField(
-                    label = "Due Day (1-28)",
-                    value = boarderDetails.dueDay,
-                    onValueChange = { boarderDetails = boarderDetails.copy(dueDay = it) },
-                    keyboardType = KeyboardType.Number,
-                    placeholder = "e.g. 5"
-                )
-                AuthField(
-                    label = "Job / Occupation",
-                    value = boarderDetails.job,
-                    onValueChange = { boarderDetails = boarderDetails.copy(job = it) },
-                    placeholder = "e.g. Student"
-                )
-            }
-        }
-
-        Spacer(Modifier.height(20.dp))
-        if (!registerAsGuardian) {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text(
-                    text = "EMERGENCY CONTACT",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = C.muted,
-                    letterSpacing = 0.5.sp
-                )
-                AuthField(
-                    label = "Contact Name",
-                    value = boarderDetails.emergencyContactName,
-                    onValueChange = { boarderDetails = boarderDetails.copy(emergencyContactName = it) }
-                )
-                AuthField(
-                    label = "Relationship",
-                    value = boarderDetails.emergencyContactRelationship,
-                    onValueChange = { boarderDetails = boarderDetails.copy(emergencyContactRelationship = it) }
-                )
-                AuthField(
-                    label = "Phone Number",
-                    value = boarderDetails.emergencyContactPhone,
-                    onValueChange = { boarderDetails = boarderDetails.copy(emergencyContactPhone = it) },
-                    keyboardType = KeyboardType.Phone
-                )
-                AuthField(
-                    label = "Secondary Phone (optional)",
-                    value = boarderDetails.emergencyContactSecondaryPhone,
-                    onValueChange = { boarderDetails = boarderDetails.copy(emergencyContactSecondaryPhone = it) },
-                    keyboardType = KeyboardType.Phone
-                )
-                AuthField(
-                    label = "Address (optional)",
-                    value = boarderDetails.emergencyContactAddress,
-                    onValueChange = { boarderDetails = boarderDetails.copy(emergencyContactAddress = it) }
-                )
-            }
-
-            Spacer(Modifier.height(20.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text(
-                    text = "GUARDIAN / HOUSE OWNER",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = C.muted,
-                    letterSpacing = 0.5.sp
-                )
-                AuthField(
-                    label = "Guardian Full Name",
-                    value = boarderDetails.guardianContactName,
-                    onValueChange = { boarderDetails = boarderDetails.copy(guardianContactName = it) }
-                )
-                AuthField(
-                    label = "Relationship to Boarder",
-                    value = boarderDetails.guardianContactRelationship,
-                    onValueChange = { boarderDetails = boarderDetails.copy(guardianContactRelationship = it) }
-                )
-                AuthField(
-                    label = "Guardian Contact Number",
-                    value = boarderDetails.guardianContactPhone,
-                    onValueChange = { boarderDetails = boarderDetails.copy(guardianContactPhone = it) },
-                    keyboardType = KeyboardType.Phone
-                )
-                AuthField(
-                    label = "Alternative Number (optional)",
-                    value = boarderDetails.guardianContactAltPhone,
-                    onValueChange = { boarderDetails = boarderDetails.copy(guardianContactAltPhone = it) },
-                    keyboardType = KeyboardType.Phone
-                )
-                AuthField(
-                    label = "Guardian Address (optional)",
-                    value = boarderDetails.guardianContactAddress,
-                    onValueChange = { boarderDetails = boarderDetails.copy(guardianContactAddress = it) }
-                )
-            }
+            AuthField(
+                label = "Full Name",
+                value = guardianDetails.fullName,
+                onValueChange = { guardianDetails = guardianDetails.copy(fullName = it) },
+                placeholder = "Full name"
+            )
+            AuthField(
+                label = "Phone Number (shown to all boarders)",
+                value = guardianDetails.phone,
+                onValueChange = { guardianDetails = guardianDetails.copy(phone = it) },
+                keyboardType = KeyboardType.Phone,
+                placeholder = "0917XXXXXX"
+            )
+            AuthField(
+                label = "House Name / Number",
+                value = guardianDetails.houseName,
+                onValueChange = { guardianDetails = guardianDetails.copy(houseName = it) },
+                placeholder = "e.g. House 12, Brgy. San Antonio"
+            )
+            AuthField(
+                label = "House Address",
+                value = guardianDetails.houseAddress,
+                onValueChange = { guardianDetails = guardianDetails.copy(houseAddress = it) },
+                placeholder = "Full address"
+            )
         }
 
         // Password strength card
@@ -581,7 +530,7 @@ private fun RegisterScreenContent(
             val (strengthText, strengthColor) = when {
                 strengthScore == 6 -> "Strong" to C.sage
                 strengthScore >= 3 -> "Medium" to C.warn
-                else -> "Weak" to Color(0xFFD94F4F)
+                else -> "Weak" to C.danger
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -635,7 +584,7 @@ private fun RegisterScreenContent(
                 text = displayError,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
-                color = Color(0xFFD94F4F)
+                color = C.danger
             )
         }
 
@@ -645,8 +594,11 @@ private fun RegisterScreenContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp)
+                .shadow(6.dp, RoundedCornerShape(14.dp))
                 .clip(RoundedCornerShape(14.dp))
-                .background(C.primary)
+                .background(
+                    Brush.linearGradient(listOf(C.primary, Color(0xFF3730A3)))
+                )
                 .clickable {
                     val trimmed = username.trim()
                     if (trimmed.isEmpty()) {
@@ -665,46 +617,49 @@ private fun RegisterScreenContent(
                         formError = "Password is required"
                         return@clickable
                     }
-                    if (password.length < 6) {
+                    if (!reqLen) {
                         formError = "Password must be at least 6 characters"
                         return@clickable
                     }
-                    if (password != confirm) {
+                    if (!reqUpper || !reqLower) {
+                        formError = "Password must contain uppercase and lowercase letters"
+                        return@clickable
+                    }
+                    if (!reqDigit) {
+                        formError = "Password must contain at least one number"
+                        return@clickable
+                    }
+                    if (!reqSpecial) {
+                        formError = "Password must contain at least one special character (e.g. !@#)"
+                        return@clickable
+                    }
+                    if (!reqMatch) {
                         formError = "Passwords do not match"
                         return@clickable
                     }
-                    if (!registerAsGuardian) {
-                        if (boarderDetails.emergencyContactName.isBlank() ||
-                            boarderDetails.emergencyContactPhone.isBlank()
-                        ) {
-                            formError = "Please enter emergency contact name and phone"
-                            return@clickable
-                        }
-                        if (boarderDetails.guardianContactName.isBlank() ||
-                            boarderDetails.guardianContactPhone.isBlank()
-                        ) {
-                            formError = "Please enter guardian contact name and phone"
-                            return@clickable
-                        }
-                    }
-                    if (registerAsGuardian && guardianDetails.fullName.isBlank()) {
+                    if (guardianDetails.fullName.isBlank()) {
                         formError = "Please enter your full name"
                         return@clickable
                     }
-                    formError = null
-                    if (registerAsGuardian) {
-                        onRegister(trimmed, password, guardianDetails, null, true)
-                    } else {
-                        onRegister(trimmed, password, null, boarderDetails, false)
+                    if (guardianDetails.phone.isBlank()) {
+                        formError = "Please enter your phone number"
+                        return@clickable
                     }
+                    if (guardianDetails.houseName.isBlank()) {
+                        formError = "Please enter your house name or number"
+                        return@clickable
+                    }
+                    formError = null
+                    onRegister(trimmed, password, guardianDetails)
                 },
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "REGISTER",
+                text = "Create Guardian Account",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = Color.White,
+                letterSpacing = 0.5.sp
             )
         }
     }
@@ -734,11 +689,12 @@ private fun ForgotScreenContent(
             color = C.text
         )
         Spacer(Modifier.height(6.dp))
-        Text(
-            text = "Please contact the administrator to reset your password.",
-            fontSize = 14.sp,
-            color = C.muted
-        )
+            Text(
+                text = "Boarders: ask your guardian to reset your password.\n" +
+                    "Guardians: contact the administrator to reset your password.",
+                fontSize = 14.sp,
+                color = C.muted
+            )
         Spacer(Modifier.height(24.dp))
         Box(
             modifier = Modifier
@@ -824,21 +780,28 @@ private fun AuthField(
     keyboardType: KeyboardType = KeyboardType.Text,
     placeholder: String? = null
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             text = label,
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
-            color = C.muted,
+            color = if (focused) C.primary else C.muted,
             letterSpacing = 0.5.sp
         )
         Spacer(Modifier.height(6.dp))
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .shadow(if (focused) 4.dp else 0.dp, RoundedCornerShape(14.dp))
                 .clip(RoundedCornerShape(14.dp))
                 .background(C.card)
-                .border(1.dp, C.border, RoundedCornerShape(14.dp))
+                .border(
+                    width = if (focused) 2.dp else 1.dp,
+                    color = if (focused) C.primary else C.border,
+                    shape = RoundedCornerShape(14.dp)
+                )
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             contentAlignment = Alignment.CenterStart
         ) {
@@ -851,6 +814,7 @@ private fun AuthField(
                     onValueChange = onValueChange,
                     modifier = Modifier.weight(1f),
                     singleLine = true,
+                    interactionSource = interactionSource,
                     textStyle = TextStyle(
                         fontSize = 14.sp,
                         color = if (value.isEmpty() && !isPassword) C.muted else C.text
@@ -873,7 +837,7 @@ private fun AuthField(
                 )
                 if (isPassword) {
                     Text(
-                        text = if (showPassword) "👁" else "👁‍🗨",
+                        text = if (showPassword) "👁" else "👁\u200D🗨",
                         fontSize = 16.sp,
                         modifier = Modifier
                             .clickable { onTogglePassword() }

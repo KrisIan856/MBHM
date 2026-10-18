@@ -20,7 +20,11 @@ data class LeaveNoticeEntity(
     val destination: String,
     val additionalNotes: String? = null,
     val status: LeaveNoticeStatus = LeaveNoticeStatus.PENDING,
-    val submittedAt: String
+    val submittedAt: String,
+    val verifiedBy: String? = null,
+    val verifiedAt: String? = null,
+    val departedAt: String? = null,
+    val arrivedAt: String? = null
 ) {
     fun toDomain(): LeaveNotice = LeaveNotice(
         id = id,
@@ -33,7 +37,11 @@ data class LeaveNoticeEntity(
         destination = destination,
         additionalNotes = additionalNotes,
         status = status,
-        submittedAt = submittedAt
+        submittedAt = submittedAt,
+        verifiedBy = verifiedBy,
+        verifiedAt = verifiedAt,
+        departedAt = departedAt,
+        arrivedAt = arrivedAt
     )
 
     companion object {
@@ -48,7 +56,11 @@ data class LeaveNoticeEntity(
             destination = notice.destination,
             additionalNotes = notice.additionalNotes,
             status = notice.status,
-            submittedAt = notice.submittedAt
+            submittedAt = notice.submittedAt,
+            verifiedBy = notice.verifiedBy,
+            verifiedAt = notice.verifiedAt,
+            departedAt = notice.departedAt,
+            arrivedAt = notice.arrivedAt
         )
     }
 }

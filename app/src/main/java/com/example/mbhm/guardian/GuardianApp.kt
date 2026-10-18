@@ -24,6 +24,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,16 +36,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mbhm.data.repository.AppRepository
 import com.example.mbhm.model.*
 import com.example.mbhm.ui.components.*
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @Composable
-fun GuardianApp(onLogout: () -> Unit) {
+fun GuardianApp(user: com.example.mbhm.data.entity.UserEntity, onLogout: () -> Unit) {
     val context = LocalContext.current
     val activity = context as? Activity
     val scope = rememberCoroutineScope()
@@ -58,38 +59,63 @@ fun GuardianApp(onLogout: () -> Unit) {
         }
     }
 
-    val boarders = remember { mutableStateOf<List<com.example.mbhm.model.Boarder>>(emptyList()) }
-    val payments = remember { mutableStateOf<List<com.example.mbhm.model.PaymentRecord>>(emptyList()) }
-    val attnRecords = remember { mutableStateOf<List<com.example.mbhm.model.AttendanceRecord>>(emptyList()) }
-    val announcements = remember { mutableStateOf<List<com.example.mbhm.model.Announcement>>(emptyList()) }
-    val incidents = remember { mutableStateOf<List<com.example.mbhm.model.Incident>>(emptyList()) }
-    val maintenance = remember { mutableStateOf<List<com.example.mbhm.model.MaintenanceReport>>(emptyList()) }
-    val curfewRecords = remember { mutableStateOf<List<com.example.mbhm.model.CurfewRecord>>(emptyList()) }
-    val billing = remember { mutableStateOf<com.example.mbhm.model.BillingSettings?>(null) }
-    val schedule = remember { mutableStateOf<com.example.mbhm.model.WorshipSchedule?>(null) }
-    val sessions = remember { mutableStateOf<List<com.example.mbhm.model.AttendanceSession>>(emptyList()) }
-    var leaveNotices by remember { mutableStateOf<List<com.example.mbhm.model.LeaveNotice>>(emptyList()) }
-    var toast by remember { mutableStateOf<String?>(null) }
-    var securityDeepLink by remember { mutableStateOf<String?>(null) }
-    var showProfileModal by remember { mutableStateOf(false) }
-    var showLeaveNoticesModal by remember { mutableStateOf(false) }
-    var loaded by remember { mutableStateOf(false) }
-
     val appRepository = remember { AppRepository.getInstance(context) }
 
-    LaunchedEffect(Unit) {
-        boarders.value = appRepository.getAllBoarders().first()
-        payments.value = appRepository.getAllPayments().first()
-        attnRecords.value = appRepository.getAllAttendanceRecords().first()
-        announcements.value = appRepository.getAllAnnouncements().first()
-        incidents.value = appRepository.getAllIncidents().first()
-        maintenance.value = appRepository.getAllMaintenanceReports().first()
-        curfewRecords.value = appRepository.getAllCurfewRecords().first()
-        billing.value = appRepository.getBillingSettings()
-        schedule.value = appRepository.getWorshipSchedule()
-        sessions.value = appRepository.getAllAttendanceSessions().first()
-        leaveNotices = appRepository.leaveNotices.getAll().first()
-        loaded = true
+    val boarders by appRepository.getAllBoarders().collectAsState(initial = emptyList())
+    val payments by appRepository.getAllPayments().collectAsState(initial = emptyList())
+    val attnRecords by appRepository.getAllAttendanceRecords().collectAsState(initial = emptyList())
+    val announcements by appRepository.getAllAnnouncements().collectAsState(initial = emptyList())
+    val incidents by appRepository.getAllIncidents().collectAsState(initial = emptyList())
+    val maintenance by appRepository.getAllMaintenanceReports().collectAsState(initial = emptyList())
+    val sessions by appRepository.getAllAttendanceSessions().collectAsState(initial = emptyList())
+    val leaveNotices by appRepository.observeLeaveNotices().collectAsState(initial = emptyList())
+    val billing by appRepository.observeBillingSettings().collectAsState(initial = null)
+    val schedule by appRepository.observeWorshipSchedule().collectAsState(initial = null)
+    val absenceAlerts by appRepository.getAllAbsenceAlerts().collectAsState(initial = emptyList())
+    val rooms by appRepository.observeRooms().collectAsState(initial = emptyList())
+    val jobs by appRepository.observeJobs().collectAsState(initial = emptyList())
+    val guardianProfile by appRepository.observeGuardianProfile().collectAsState(initial = null)
+    var toast by remember { mutableStateOf<String?>(null) }
+    var securityDeepLink by remember { mutableStateOf<String?>(null) }
+    var paymentsBoarder by remember { mutableStateOf<com.example.mbhm.model.Boarder?>(null) }
+    var attendanceBoarder by remember { mutableStateOf<com.example.mbhm.model.Boarder?>(null) }
+    var showProfileModal by remember { mutableStateOf(false) }
+    var showLeaveNoticesModal by remember { mutableStateOf(false) }
+    var showLogoutConfirm by remember { mutableStateOf(false) }
+    val today = remember { java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.ENGLISH).format(java.util.Date()) }
+    val guardianName = user.displayName?.takeIf { it.isNotBlank() } ?: user.username
+    val guardianInitial = guardianName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "G"
+
+    val greeting = remember {
+        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        when {
+            hour < 12 -> "Good morning"
+            hour < 17 -> "Good afternoon"
+            else -> "Good evening"
+        }
+    }
+
+    val setBoarders: (List<com.example.mbhm.model.Boarder>) -> Unit = { list ->
+        scope.launch { appRepository.upsertBoarders(list) }
+    }
+    val setPayments: (List<com.example.mbhm.model.PaymentRecord>) -> Unit = { list ->
+        scope.launch { appRepository.upsertPayments(list) }
+    }
+    val setRecords: (List<com.example.mbhm.model.AttendanceRecord>) -> Unit = { list ->
+        scope.launch { appRepository.upsertAttendanceRecords(list) }
+    }
+    val setAnnouncements: (List<com.example.mbhm.model.Announcement>) -> Unit = { list ->
+        scope.launch { appRepository.upsertAnnouncements(list) }
+    }
+    val setIncidents: (List<com.example.mbhm.model.Incident>) -> Unit = { list ->
+        scope.launch { appRepository.upsertIncidents(list) }
+    }
+    val setMaintenance: (List<com.example.mbhm.model.MaintenanceReport>) -> Unit = { list ->
+        scope.launch { appRepository.upsertMaintenanceReports(list) }
+    }
+
+    LaunchedEffect(schedule) {
+        schedule?.let { appRepository.ensureTodaySessions(today, it) }
     }
 
     val navItems = listOf(
@@ -105,54 +131,102 @@ fun GuardianApp(onLogout: () -> Unit) {
             Box(Modifier.weight(1f)) {
                 when (tab) {
                     "dashboard" -> GDashboard(
-                        boarders = boarders.value,
-                        payments = payments.value,
-                        attnRecords = attnRecords.value,
+                        boarders = boarders,
+                        payments = payments,
+                        attnRecords = attnRecords,
+                        sessions = sessions,
                         leaveNotices = leaveNotices,
+                        guardianName = guardianName,
+                        guardianInitial = guardianInitial,
+                        greeting = greeting,
                         onTabChange = { tab = it },
+                        onAnnouncements = { tab = "announcements" },
                         onEmergencyContacts = { securityDeepLink = "contacts"; tab = "security" },
                         onProfileClick = { showProfileModal = true },
                         onBoarderInfo = { securityDeepLink = "boarders"; tab = "security" },
                         onLeaveNotices = { showLeaveNoticesModal = true }
                     )
-                    "payments" -> billing.value?.let { b ->
+                    "payments" -> billing?.let { b ->
                         GPayments(
-                            boarders = boarders.value,
-                            payments = payments.value,
+                            boarders = boarders,
+                            payments = payments,
                             billing = b,
-                            setBoarders = { boarders.value = it },
-                            setPayments = { payments.value = it },
-                            setBilling = { billing.value = it },
-                            showToast = { toast = it }
+                            setBoarders = setBoarders,
+                            setPayments = setPayments,
+                            setBilling = { nb -> scope.launch { appRepository.insertBillingSettings(nb) } },
+                            showToast = { toast = it },
+                            deepLinkBoarder = paymentsBoarder,
+                            onDeepLinkConsumed = { paymentsBoarder = null }
                         )
                     } ?: Placeholder("💳", "Loading payments…")
-                    "attendance" -> schedule.value?.let { s ->
+                    "attendance" -> schedule?.let { s ->
                         GAttendance(
-                            boarders = boarders.value,
-                            sessions = sessions.value,
-                            records = attnRecords.value,
-                            setRecords = { attnRecords.value = it },
+                            boarders = boarders,
+                            sessions = sessions,
+records = attnRecords,
+        setRecords = setRecords,
+        absenceAlerts = absenceAlerts,
+        onSendAlerts = { alerts -> scope.launch { appRepository.upsertAbsenceAlerts(alerts) } },
                             schedule = s,
-                            setSchedule = { schedule.value = it },
-                            showToast = { toast = it }
+                            setSchedule = { ns -> scope.launch { appRepository.insertWorshipSchedule(ns) } },
+                            showToast = { toast = it },
+                            deepLinkBoarder = attendanceBoarder,
+                            onDeepLinkConsumed = { attendanceBoarder = null }
                         )
                     } ?: Placeholder("📅", "Loading attendance…")
+                    "announcements" -> GAnnouncements(
+                        boarders = boarders,
+                        announcements = announcements,
+                        setAnnouncements = setAnnouncements,
+                        showToast = { toast = it },
+                        onBack = { tab = "dashboard" }
+                    )
                     "security" -> GSecurity(
-                        boarders = boarders.value,
-                        setBoarders = { boarders.value = it },
-                        announcements = announcements.value,
-                        setAnnouncements = { announcements.value = it },
-                        incidents = incidents.value,
-                        setIncidents = { incidents.value = it },
-                        maintenance = maintenance.value,
-                        setMaintenance = { maintenance.value = it },
-                        curfew = curfewRecords.value,
-                        setCurfew = { curfewRecords.value = it },
+                        boarders = boarders,
+                        setBoarders = setBoarders,
+                        incidents = incidents,
+                        setIncidents = setIncidents,
+                        maintenance = maintenance,
+                        setMaintenance = setMaintenance,
+                        rooms = rooms,
+                        jobs = jobs,
+                        guardianProfile = guardianProfile,
+                        onCreateBoarder = { input ->
+                            appRepository.createBoarderAccount(input, guardianProfile)
+                        },
+                        onSetPassword = { idNumber, pwd ->
+                            appRepository.setAccountPassword(idNumber, pwd)
+                        },
                         deepLink = securityDeepLink,
                         onDeepLinkConsumed = { securityDeepLink = null },
+                        onViewPayments = { b -> paymentsBoarder = b; tab = "payments" },
+                        onViewAttendance = { b -> attendanceBoarder = b; tab = "attendance" },
                         showToast = { toast = it }
                     )
-                    "more" -> GMore(onLogout = onLogout, showToast = { toast = it })
+                    "more" -> {
+                        val b = billing
+                        val s = schedule
+                        if (b != null && s != null) {
+                            GMore(
+                                onLogout = onLogout,
+                                showToast = { toast = it },
+                                boarders = boarders,
+                                setBoarders = setBoarders,
+                                billing = b,
+                                setBilling = { nb -> scope.launch { appRepository.insertBillingSettings(nb) } },
+                                schedule = s,
+                                setSchedule = { ns -> scope.launch { appRepository.insertWorshipSchedule(ns) } },
+                                rooms = rooms,
+                                jobs = jobs,
+                                onSaveRoom = { r -> scope.launch { appRepository.saveRoom(r) } },
+                                onDeleteRoom = { n -> scope.launch { appRepository.deleteRoom(n) } },
+                                onSaveJob = { j -> scope.launch { appRepository.saveJob(j) } },
+                                onDeleteJob = { n -> scope.launch { appRepository.deleteJob(n) } }
+                            )
+                        } else {
+                            Placeholder("⚙️", "Loading settings…")
+                        }
+                    }
                 }
             }
             NavBar(navItems, tab, onSelect = { tab = it })
@@ -180,13 +254,60 @@ fun GuardianApp(onLogout: () -> Unit) {
                         .background(C.primary),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("S", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                    Text(guardianInitial, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
                 }
 
-                Text("Sandra Santos", color = C.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text("House Guardian · Casa Marigold", color = C.muted, fontSize = 13.sp)
+                Text(guardianName, color = C.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Box(
+                    Modifier.clip(RoundedCornerShape(50))
+                        .background(C.primaryLt)
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Text("Guardian", color = C.primary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Text("@${user.username} · Casa Marigold", color = C.muted, fontSize = 13.sp)
 
-                HorizontalDivider(color = C.border, modifier = Modifier.padding(vertical = 8.dp))
+                HorizontalDivider(color = C.border)
+
+                val monthLabel = remember {
+                    java.text.SimpleDateFormat("MMM yyyy", java.util.Locale.US).format(java.util.Date())
+                }
+                val todaySessionIds = sessions.filter { it.date == today }.map { it.id }.toSet()
+                val presentToday = attnRecords.count {
+                    it.sessionId in todaySessionIds && it.status == AttendanceStatus.PRESENT
+                }
+                val monthPaid = payments.filter { it.period == monthLabel }.sumOf { p ->
+                    when (p.status) {
+                        PayStatus.PAID -> p.amountPaid ?: p.amount
+                        PayStatus.PARTIAL -> p.amountPaid ?: 0
+                        else -> 0
+                    }
+                }
+                val monthDue = boarders.sumOf { it.monthlyRate }
+                val pendingReceipts = payments.count { it.receiptStatus == ReceiptStatus.PENDING_REVIEW }
+
+                PCard(padding = PaddingValues(14.dp)) {
+                    Column(Modifier.fillMaxWidth()) {
+                        Text(
+                            "ACCOUNT & OVERVIEW",
+                            color = C.muted,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.6.sp,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                        profileInfoRow("Full name", guardianName)
+                        profileInfoRow("Username", "@${user.username}")
+                        profileInfoRow("House", "Casa Marigold")
+                        HorizontalDivider(color = C.border, modifier = Modifier.padding(vertical = 8.dp))
+                        profileInfoRow("Boarders", "${boarders.size} registered")
+                        profileInfoRow("Collected this month", "${money(monthPaid)} of ${money(monthDue)}")
+                        profileInfoRow("Receipts to review", pendingReceipts.toString())
+                        profileInfoRow("Present today", "$presentToday of ${boarders.size}")
+                    }
+                }
+
+                HorizontalDivider(color = C.border)
 
                 Row(
                     modifier = Modifier
@@ -194,8 +315,7 @@ fun GuardianApp(onLogout: () -> Unit) {
                         .clip(RoundedCornerShape(12.dp))
                         .background(C.dangerLt)
                         .clickable {
-                            showProfileModal = false
-                            onLogout()
+                            showLogoutConfirm = true
                         }
                         .padding(14.dp),
                     horizontalArrangement = Arrangement.Center,
@@ -211,15 +331,50 @@ fun GuardianApp(onLogout: () -> Unit) {
             onClose = { showLeaveNoticesModal = false },
             title = "Leave Notices"
         ) {
+            var statusFilter by remember { mutableStateOf("all") }
+            var fromIso by remember { mutableStateOf("") }
+            var toIso by remember { mutableStateOf("") }
+            val noticeContext = LocalContext.current
+
             if (leaveNotices.isEmpty()) {
                 EmptyState(icon = "📋", title = "No leave notices")
             } else {
-                leaveNotices.forEach { notice ->
+                SectionHeader(title = "Filter by date")
+                DateRangeFilter(
+                    from = fromIso,
+                    to = toIso,
+                    onChange = { f, t -> fromIso = f; toIso = t }
+                )
+                ChipBar(
+                    options = listOf(
+                        "All" to "all",
+                        "Pending" to "pending",
+                        "Approved" to "approved",
+                        "Departed" to "departed",
+                        "Rejected" to "rejected",
+                        "Arrived" to "completed"
+                    ),
+                    value = statusFilter,
+                    onChange = { statusFilter = it }
+                )
+
+                val filteredNotices = leaveNotices.filter { notice ->
+                    (statusFilter == "all" || notice.status.name.lowercase() == statusFilter) &&
+                        withinDateRange(notice.submittedAt, fromIso, toIso)
+                }
+
+                if (filteredNotices.isEmpty()) {
+                    EmptyState(icon = "🔍", title = "No matching leave notices")
+                }
+
+                filteredNotices.forEach { notice ->
+                    val sender = boarders.find { it.id == notice.boarderId }
                     val (label, bg0, fg) = when (notice.status) {
                         LeaveNoticeStatus.PENDING -> Triple("Pending", C.warnLt, C.warn)
                         LeaveNoticeStatus.APPROVED -> Triple("Approved", C.sageLt, C.greenText)
                         LeaveNoticeStatus.REJECTED -> Triple("Rejected", C.dangerLt, C.danger)
-                        LeaveNoticeStatus.COMPLETED -> Triple("Completed", C.blueLt, C.blueText)
+                        LeaveNoticeStatus.DEPARTED -> Triple("Departed", C.primaryLt, C.primary)
+                        LeaveNoticeStatus.COMPLETED -> Triple("Arrived", C.blueLt, C.blueText)
                     }
                     PCard {
                         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -232,6 +387,58 @@ fun GuardianApp(onLogout: () -> Unit) {
                                     Text(label, color = fg, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
+
+                            Text(
+                                "Sent by ${sender?.name ?: "Unknown boarder"} · Room ${sender?.room ?: "—"}",
+                                color = C.text,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                "Submitted ${notice.submittedAt}",
+                                color = C.muted,
+                                fontSize = 12.sp
+                            )
+                            val senderPhone = sender?.phone
+                            if (!senderPhone.isNullOrBlank()) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "📞 $senderPhone",
+                                        color = C.muted,
+                                        fontSize = 12.sp,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Box(
+                                        Modifier.clip(RoundedCornerShape(50))
+                                            .background(C.sageLt)
+                                            .clickable { dialPhone(noticeContext, senderPhone) }
+                                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Text("Call", color = C.greenText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                            }
+
+                            notice.verifiedBy?.let { verifier ->
+                                val verifiedLabel = if (notice.status == LeaveNoticeStatus.REJECTED) "✕ Declined by" else "✓ Verified by"
+                                Box(
+                                    Modifier.clip(RoundedCornerShape(50))
+                                        .background(if (notice.status == LeaveNoticeStatus.REJECTED) C.dangerLt else C.sageLt)
+                                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        "$verifiedLabel $verifier" + (notice.verifiedAt?.let { " · $it" } ?: ""),
+                                        color = if (notice.status == LeaveNoticeStatus.REJECTED) C.danger else C.greenText,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+
                             if (notice.status == LeaveNoticeStatus.PENDING) {
                                 Row(
                                     Modifier.fillMaxWidth().padding(top = 6.dp),
@@ -241,11 +448,15 @@ fun GuardianApp(onLogout: () -> Unit) {
                                         onClick = {
                                             scope.launch {
                                                 appRepository.leaveNotices.update(
-                                                    notice.copy(status = LeaveNoticeStatus.APPROVED)
+                                                    notice.copy(
+                                                        status = LeaveNoticeStatus.APPROVED,
+                                                        verifiedBy = guardianName,
+                                                        verifiedAt = java.text.SimpleDateFormat(
+                                                            "MMM d, yyyy · h:mm a",
+                                                            java.util.Locale.ENGLISH
+                                                        ).format(java.util.Date())
+                                                    )
                                                 )
-                                            }
-                                            leaveNotices = leaveNotices.map {
-                                                if (it.id == notice.id) notice.copy(status = LeaveNoticeStatus.APPROVED) else it
                                             }
                                             toast = "Leave notice approved"
                                         },
@@ -258,11 +469,15 @@ fun GuardianApp(onLogout: () -> Unit) {
                                         onClick = {
                                             scope.launch {
                                                 appRepository.leaveNotices.update(
-                                                    notice.copy(status = LeaveNoticeStatus.REJECTED)
+                                                    notice.copy(
+                                                        status = LeaveNoticeStatus.REJECTED,
+                                                        verifiedBy = guardianName,
+                                                        verifiedAt = java.text.SimpleDateFormat(
+                                                            "MMM d, yyyy · h:mm a",
+                                                            java.util.Locale.ENGLISH
+                                                        ).format(java.util.Date())
+                                                    )
                                                 )
-                                            }
-                                            leaveNotices = leaveNotices.map {
-                                                if (it.id == notice.id) notice.copy(status = LeaveNoticeStatus.REJECTED) else it
                                             }
                                             toast = "Leave notice declined"
                                         },
@@ -270,6 +485,95 @@ fun GuardianApp(onLogout: () -> Unit) {
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Text("✕ Decline", color = C.danger, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
+                                }
+                            } else {
+                                Column(
+                                    Modifier.fillMaxWidth().padding(top = 6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        "Planned — depart ${notice.leaveDate} ${notice.expectedDepartureTime} · return ${notice.expectedReturnDate} ${notice.expectedReturnTime}",
+                                        color = C.muted,
+                                        fontSize = 12.sp
+                                    )
+                                    notice.departedAt?.let { departed ->
+                                        Text(
+                                            "🚪 Actually departed $departed",
+                                            color = C.primary,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                    notice.arrivedAt?.let { arrived ->
+                                        Text(
+                                            "🏠 Actually arrived $arrived",
+                                            color = C.greenText,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+
+                                    when (notice.status) {
+                                        LeaveNoticeStatus.APPROVED -> {
+                                            Box(
+                                                Modifier.fillMaxWidth()
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(C.sageLt)
+                                                    .padding(vertical = 10.dp, horizontal = 12.dp)
+                                            ) {
+                                                Text(
+                                                    "✓ Approved — waiting for the boarder to tap “I'm Leaving Now”",
+                                                    color = C.greenText,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+                                        }
+                                        LeaveNoticeStatus.DEPARTED -> {
+                                            Button(
+                                                onClick = {
+                                                    val now = java.text.SimpleDateFormat(
+                                                        "MMM d, yyyy · h:mm a",
+                                                        java.util.Locale.ENGLISH
+                                                    ).format(java.util.Date())
+                                                    scope.launch {
+                                                        appRepository.leaveNotices.update(
+                                                            notice.copy(
+                                                                status = LeaveNoticeStatus.COMPLETED,
+                                                                arrivedAt = now
+                                                            )
+                                                        )
+                                                    }
+                                                    toast = "Arrival confirmed at $now"
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = C.sage),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text(
+                                                    "🏠 Mark as Arrived",
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp
+                                                )
+                                            }
+                                        }
+                                        LeaveNoticeStatus.COMPLETED -> {
+                                            Box(
+                                                Modifier.fillMaxWidth()
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(C.sageLt)
+                                                    .padding(vertical = 10.dp, horizontal = 12.dp)
+                                            ) {
+                                                Text(
+                                                    "✓ Trip complete — boarder is back",
+                                                    color = C.greenText,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+                                        }
+                                        else -> {}
                                     }
                                 }
                             }
@@ -302,19 +606,27 @@ fun GDashboard(
     boarders: List<Boarder>,
     payments: List<PaymentRecord>,
     attnRecords: List<AttendanceRecord>,
+    sessions: List<AttendanceSession>,
     leaveNotices: List<LeaveNotice>,
+    guardianName: String,
+    guardianInitial: String,
+    greeting: String,
     onTabChange: (String) -> Unit,
+    onAnnouncements: () -> Unit,
     onEmergencyContacts: () -> Unit,
     onProfileClick: () -> Unit,
     onBoarderInfo: () -> Unit,
     onLeaveNotices: () -> Unit
 ) {
-    val sepPay = payments.filter { it.period == "Sep 2026" }
+    val monthLabel = remember { java.text.SimpleDateFormat("MMM yyyy", java.util.Locale.US).format(java.util.Date()) }
+    val today = remember { java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.ENGLISH).format(java.util.Date()) }
+    val todaySessionIds = sessions.filter { it.date == today }.map { it.id }.toSet()
+    val sepPay = payments.filter { it.period == monthLabel }
     val paid = sepPay.count { it.status == PayStatus.PAID }
     val partial = sepPay.count { it.status == PayStatus.PARTIAL }
     val pending = sepPay.count { it.status == PayStatus.PENDING }
     val overdue = sepPay.count { it.status == PayStatus.OVERDUE }
-    val present = attnRecords.count { it.sessionId == "s1" && it.status == AttendanceStatus.PRESENT }
+    val present = attnRecords.count { it.sessionId in todaySessionIds && it.status == AttendanceStatus.PRESENT }
     val fullCollected = sepPay.filter { it.status == PayStatus.PAID }.sumOf { it.amount }
     val partialCollected = sepPay.filter { it.status == PayStatus.PARTIAL }.sumOf { it.amountPaid ?: 0 }
     val collected = fullCollected + partialCollected
@@ -328,8 +640,18 @@ fun GDashboard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column {
-                Text("Good morning, 👋", color = C.text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Text("Sandra Santos · Casa Marigold", color = C.muted, fontSize = 14.sp)
+                Text("$greeting, 👋", color = C.text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("$guardianName · Casa Marigold", color = C.muted, fontSize = 14.sp)
+                    Box(
+                        Modifier.padding(start = 8.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(C.primaryLt)
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text("Guardian", color = C.primary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
             }
 
             // Circular Profile Picture (Req 2.A)
@@ -341,7 +663,7 @@ fun GDashboard(
                     .clickable { onProfileClick() },
                 contentAlignment = Alignment.Center
             ) {
-                Text("S", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(guardianInitial, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -386,8 +708,8 @@ fun GDashboard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("September Collection", color = C.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                Text("Sep 2026", color = C.muted, fontSize = 12.sp)
+                Text("$monthLabel Collection", color = C.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text(monthLabel, color = C.muted, fontSize = 12.sp)
             }
             Row(
                 Modifier.fillMaxWidth().padding(top = 12.dp),
@@ -422,8 +744,9 @@ fun GDashboard(
             )
         }
 
-        // Reusable Consistent Quick Actions (Req 2.B)
+        // Grouped Quick Actions
         GuardianQuickActions(
+            onAnnouncementsClick = onAnnouncements,
             onPaymentsClick = { onTabChange("payments") },
             onAttendanceClick = { onTabChange("attendance") },
             onEmergencyContactsClick = onEmergencyContacts,
@@ -434,9 +757,10 @@ fun GDashboard(
     }
 }
 
-// Reusable Consistent Quick Actions Component (Req 2.B)
+// Grouped Quick Actions Component
 @Composable
 fun GuardianQuickActions(
+    onAnnouncementsClick: () -> Unit,
     onPaymentsClick: () -> Unit,
     onAttendanceClick: () -> Unit,
     onEmergencyContactsClick: () -> Unit,
@@ -444,19 +768,39 @@ fun GuardianQuickActions(
     onBoarderInfoClick: () -> Unit,
     onLeaveNoticesClick: () -> Unit
 ) {
-    Column {
-        SectionHeader(title = "Quick Actions")
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            dashAction(Modifier.weight(1f), "💳", "Payments", C.card, C.border, C.text, onPaymentsClick)
-            dashAction(Modifier.weight(1f), "📅", "Attendance", C.card, C.border, C.text, onAttendanceClick)
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column {
+            SectionHeader(title = "Notices")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                dashAction(Modifier.weight(1f), "📣", "Announcements", C.card, C.border, C.text, onAnnouncementsClick)
+                dashAction(Modifier.weight(1f), "📝", "Leave Notices", C.card, C.border, C.text, onLeaveNoticesClick)
+            }
         }
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            dashAction(Modifier.weight(1f), "🛡️", "Security", C.card, C.border, C.text, onSecurityClick)
-            dashAction(Modifier.weight(1f), "📞", "Emergency", C.dangerLt, Color(0xFFF5C4C4), C.danger, onEmergencyContactsClick)
+        Column {
+            SectionHeader(title = "Records")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                dashAction(Modifier.weight(1f), "💳", "Payments", C.card, C.border, C.text, onPaymentsClick)
+                dashAction(Modifier.weight(1f), "📅", "Attendance", C.card, C.border, C.text, onAttendanceClick)
+            }
         }
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            dashAction(Modifier.weight(1f), "👥", "Boarders", C.card, C.border, C.text, onBoarderInfoClick)
-            dashAction(Modifier.weight(1f), "📝", "Leave Notices", C.card, C.border, C.text, onLeaveNoticesClick)
+        Column {
+            SectionHeader(title = "People & Safety")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                dashAction(Modifier.weight(1f), "👥", "Boarders", C.card, C.border, C.text, onBoarderInfoClick)
+                dashAction(Modifier.weight(1f), "🛡️", "Security", C.card, C.border, C.text, onSecurityClick)
+            }
+        }
+        Column {
+            SectionHeader(title = "Emergency")
+            dashAction(
+                Modifier.fillMaxWidth(),
+                "📞",
+                "Emergency Contacts",
+                C.dangerLt,
+                C.danger.copy(alpha = 0.25f),
+                C.danger,
+                onEmergencyContactsClick
+            )
         }
     }
 }
@@ -503,7 +847,36 @@ private fun dashAction(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text(icon, fontSize = 20.sp)
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(
+                    if (bg == C.dangerLt) C.danger.copy(alpha = 0.15f)
+                    else C.primaryLt
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(icon, fontSize = 17.sp)
+        }
         Text(label, color = textColor, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun profileInfoRow(label: String, value: String) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, color = C.muted, fontSize = 13.sp)
+        Text(
+            value,
+            color = C.text,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.End,
+            modifier = Modifier.padding(start = 16.dp)
+        )
     }
 }

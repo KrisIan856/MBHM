@@ -41,6 +41,20 @@ fun MbhmApp() {
     var authenticatedUser by remember { mutableStateOf<UserEntity?>(null) }
     var sessionToastMsg by remember { mutableStateOf<String?>(null) }
 
+    LaunchedEffect(Unit) {
+        appRepository.seedIfEmpty()
+        val dateFmt = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.ENGLISH)
+        while (true) {
+            val schedule = appRepository.getWorshipSchedule()
+            if (schedule != null) {
+                val today = dateFmt.format(java.util.Date())
+                appRepository.ensureTodaySessions(today, schedule)
+                appRepository.markMissedAttendees(today, schedule)
+            }
+            kotlinx.coroutines.delay(15_000L)
+        }
+    }
+
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -95,7 +109,7 @@ fun MbhmApp() {
                 }
             )
             else -> when (user.role) {
-                Role.GUARDIAN -> GuardianApp(onLogout = {
+                Role.GUARDIAN -> GuardianApp(user = user, onLogout = {
                     sessionManager.clearSession()
                     authenticatedUser = null
                 })

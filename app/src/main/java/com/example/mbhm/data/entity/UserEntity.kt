@@ -9,5 +9,6 @@ data class UserEntity(
     @PrimaryKey val username: String,
     val passwordHash: String,
     val role: Role,
-    val boarderId: String? = null
+    val boarderId: String? = null,
+    val displayName: String? = null
 )

@@ -15,7 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,18 +29,14 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.mbhm.model.Announcement
 import com.example.mbhm.model.Boarder
-import com.example.mbhm.model.CurfewRecord
-import com.example.mbhm.model.CurfewStatus
 import com.example.mbhm.model.MaintCategory
 import com.example.mbhm.model.MaintStatus
 import com.example.mbhm.model.MaintenanceReport
-import com.example.mbhm.model.Priority
+import com.example.mbhm.data.repository.AppRepository
 import com.example.mbhm.ui.components.ActionPair
 import com.example.mbhm.ui.components.C
 import com.example.mbhm.ui.components.EmptyState
@@ -53,7 +49,6 @@ import com.example.mbhm.ui.components.PrimaryButton
 import com.example.mbhm.ui.components.RowItem
 import com.example.mbhm.ui.components.Screen
 import com.example.mbhm.ui.components.ScrollBody
-import com.example.mbhm.ui.components.SectionHeader
 import com.example.mbhm.ui.components.Select
 import com.example.mbhm.ui.components.Textarea
 import com.example.mbhm.ui.components.dialPhone
@@ -61,33 +56,25 @@ import com.example.mbhm.ui.components.dialPhone
 @Composable
 fun BSecurity(
     boarder: Boarder,
-    announcements: List<Announcement>,
-    setAnnouncements: (List<Announcement>) -> Unit,
+    startScreen: String = "overview",
     maintenance: List<MaintenanceReport>,
     setMaintenance: (List<MaintenanceReport>) -> Unit,
-    curfew: List<CurfewRecord>,
-    setCurfew: (List<CurfewRecord>) -> Unit,
+    onBoarderUpdate: (Boarder) -> Unit,
+    onSendSos: () -> Unit,
     showToast: (String) -> Unit
 ) {
-    var screen by remember { mutableStateOf("overview") }
+    var screen by remember(startScreen) { mutableStateOf(startScreen) }
     var screenData by remember { mutableStateOf<Any?>(null) }
     var sosModal by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val appRepository = remember(context) { AppRepository.getInstance(context) }
+    val guardianProfile by appRepository.observeGuardianProfile().collectAsState(initial = null)
 
     fun nav(s: String, d: Any? = null) {
         screen = s
         screenData = d
     }
 
-    if (screen == "ann-detail") {
-        BAnn_Detail(
-            announcement = screenData as Announcement,
-            boarder = boarder,
-            announcements = announcements,
-            setAnnouncements = setAnnouncements,
-            onBack = { nav("overview") }
-        )
-        return
-    }
     if (screen == "maintenance") {
         B_Maintenance(
             boarder = boarder,
@@ -98,40 +85,9 @@ fun BSecurity(
         )
         return
     }
-    if (screen == "curfew") {
-        B_Curfew(
-            boarder = boarder,
-            curfew = curfew,
-            setCurfew = setCurfew,
-            showToast = showToast,
-            onBack = { nav("overview") }
-        )
-        return
-    }
     if (screen == "emergency-contact") {
-        B_EmergencyContact(boarder = boarder, showToast = showToast, onBack = { nav("overview") })
+        B_EmergencyContact(boarder = boarder, onBoarderUpdate = onBoarderUpdate, showToast = showToast, onBack = { nav("overview") })
         return
-    }
-
-    val myAnn = announcements.filter { a -> a.isFor(boarder.id) }
-    val unread = myAnn.count { a -> !a.readBy.contains(boarder.id) }
-    val myCurfew = curfew.find { c -> c.boarderId == boarder.id }
-
-    var annRight: (@Composable () -> Unit)? = null
-    if (unread > 0) {
-        annRight = {
-            Box(
-                Modifier.size(20.dp).clip(CircleShape).background(C.danger),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    unread.toString(),
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -142,7 +98,7 @@ fun BSecurity(
                     Modifier.fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
                         .background(C.dangerLt)
-                        .border(2.dp, Color(0xFFF5C4C4), RoundedCornerShape(14.dp))
+                        .border(2.dp, C.danger.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
                         .clickable { sosModal = true }
                         .padding(20.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -172,193 +128,31 @@ fun BSecurity(
                     }
                 }
 
-                Column(
-                    Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(C.card)
-                        .border(1.dp, C.border, RoundedCornerShape(14.dp))
-                        .padding(16.dp)
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                "🌙 Curfew — 10:00 PM",
-                                color = C.text,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                "Sep 7, 2026",
-                                color = C.muted,
-                                fontSize = 12.sp,
-                                modifier = Modifier.padding(top = 2.dp)
-                            )
-                        }
-                        if (myCurfew != null) {
-                            val chipBg = when (myCurfew.status) {
-                                CurfewStatus.COMPLIANT -> C.sageLt
-                                CurfewStatus.PENDING -> C.primaryLt
-                                else -> C.dangerLt
-                            }
-                            val chipFg = when (myCurfew.status) {
-                                CurfewStatus.COMPLIANT -> C.greenText
-                                CurfewStatus.PENDING -> C.primary
-                                else -> C.danger
-                            }
-                            val chipText = when (myCurfew.status) {
-                                CurfewStatus.COMPLIANT -> "✓ In"
-                                CurfewStatus.PENDING -> "⏳ Pending"
-                                else -> "⚠ Late"
-                            }
-                            Box(
-                                Modifier.clip(RoundedCornerShape(50))
-                                    .background(chipBg)
-                                    .padding(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    chipText,
-                                    color = chipFg,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
-                    }
-                    val checkedInAt = myCurfew?.checkedInAt
-                    if (checkedInAt != null) {
-                        Text(
-                            "Checked in at $checkedInAt",
-                            color = C.muted,
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                    }
-                    if (myCurfew?.status == CurfewStatus.PENDING) {
-                        Box(
-                            Modifier.fillMaxWidth()
-                                .padding(top = 12.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(C.primary)
-                                .clickable { nav("curfew") }
-                                .padding(vertical = 10.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                "Check In Now",
-                                color = Color.White,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-                }
-
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     RowItem(
                         icon = "📞",
                         label = "Emergency Contact",
-                        sub = "${boarder.emergencyContact.name} · ${boarder.emergencyContact.relationship}",
+                        sub = "${boarder.emergencyContact.name} · ${boarder.emergencyContact.phone}",
                         onClick = { nav("emergency-contact") }
                     )
                     RowItem(
-                        icon = "📢",
-                        label = "Announcements",
-                        sub = if (unread > 0) "$unread unread" else "All read",
-                        onClick = { nav("ann-list") },
-                        right = annRight
-                    )
-                }
-
-                if (screen == "overview") {
-                    Column(Modifier.fillMaxWidth()) {
-                        SectionHeader(title = "Announcements")
-                        Column(
-                            Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            myAnn.forEach { a ->
-                                val read = a.readBy.contains(boarder.id)
-                                val acked = a.acknowledgedBy.contains(boarder.id)
-                                Column(
-                                    Modifier.fillMaxWidth()
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .background(C.card)
-                                        .border(
-                                            1.dp,
-                                            if (!read && a.priority == Priority.CRITICAL) Color(0xFFF5C4C4)
-                                            else C.border,
-                                            RoundedCornerShape(14.dp)
-                                        )
-                                        .clickable { nav("ann-detail", a) }
-                                        .padding(16.dp)
-                                ) {
-                                    Row(
-                                        Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                        verticalAlignment = Alignment.Top
-                                    ) {
-                                        Text(
-                                            if (a.priority == Priority.CRITICAL) "🔴" else "📢",
-                                            fontSize = 18.sp,
-                                            modifier = Modifier.padding(top = 2.dp)
-                                        )
-                                        Column(Modifier.weight(1f)) {
-                                            Row(
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                if (!read) {
-                                                    Box(
-                                                        Modifier.size(8.dp)
-                                                            .clip(CircleShape)
-                                                            .background(C.primary)
-                                                    )
-                                                }
-                                                Text(
-                                                    a.title,
-                                                    color = C.text,
-                                                    fontSize = 14.sp,
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
-                                            }
-                                            Text(
-                                                a.body,
-                                                color = C.muted,
-                                                fontSize = 12.sp,
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.padding(top = 2.dp)
-                                            )
-                                            Text(
-                                                a.sentAt,
-                                                color = C.muted,
-                                                fontSize = 12.sp,
-                                                modifier = Modifier.padding(top = 6.dp)
-                                            )
-                                        }
-                                        if (a.priority == Priority.CRITICAL && !acked && read) {
-                                            Box(
-                                                Modifier.clip(RoundedCornerShape(50))
-                                                    .background(C.warnLt)
-                                                    .padding(horizontal = 8.dp, vertical = 2.dp)
-                                            ) {
-                                                Text(
-                                                    "Ack req.",
-                                                    color = C.warn,
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                        icon = "🏠",
+                        label = "House Guardian",
+                        sub = guardianProfile?.phone?.ifBlank { null }
+                            ?: boarder.guardianContact.phone,
+                        onClick = {
+                            val phone = guardianProfile?.phone?.ifBlank { null }
+                                ?: boarder.guardianContact.phone
+                            if (phone.isNotBlank()) dialPhone(context, phone)
+                            else showToast("No guardian contact number saved yet")
                         }
-                    }
+                    )
+                    RowItem(
+                        icon = "🔧",
+                        label = "Maintenance",
+                        sub = "${maintenance.count { m -> m.boarderId == boarder.id }} request${if (maintenance.count { m -> m.boarderId == boarder.id } == 1) "" else "s"}",
+                        onClick = { nav("maintenance") }
+                    )
                 }
             }
         }
@@ -373,7 +167,7 @@ fun BSecurity(
                     buildAnnotatedString {
                         append("This will immediately alert ")
                         withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = C.text)) {
-                            append("Ate Sandra")
+                            append("the guardian")
                         }
                         append(" of an emergency. Only use in genuine emergencies.")
                     },
@@ -387,6 +181,7 @@ fun BSecurity(
                 onCancel = { sosModal = false },
                 onConfirm = {
                     sosModal = false
+                    onSendSos()
                     showToast("🆘 SOS alert sent! Guardian has been notified.")
                 },
                 confirmLabel = "Send SOS Alert",
@@ -397,121 +192,14 @@ fun BSecurity(
 }
 
 @Composable
-private fun BAnn_Detail(
-    announcement: Announcement,
-    boarder: Boarder,
-    announcements: List<Announcement>,
-    setAnnouncements: (List<Announcement>) -> Unit,
-    onBack: () -> Unit
-) {
-    fun markRead() {
-        if (!announcement.readBy.contains(boarder.id)) {
-            setAnnouncements(announcements.map { a ->
-                if (a.id == announcement.id) a.copy(readBy = a.readBy + boarder.id) else a
-            })
-        }
-    }
-
-    fun acknowledge() {
-        setAnnouncements(announcements.map { a ->
-            if (a.id == announcement.id) {
-                a.copy(
-                    acknowledgedBy = a.acknowledgedBy + boarder.id,
-                    readBy = if (a.readBy.contains(boarder.id)) a.readBy else a.readBy + boarder.id
-                )
-            } else a
-        })
-    }
-
-    LaunchedEffect(Unit) {
-        markRead()
-    }
-
-    val a = announcements.find { x -> x.id == announcement.id } ?: announcement
-    val isRead = a.readBy.contains(boarder.id)
-    val isAcked = a.acknowledgedBy.contains(boarder.id)
-
-    Screen(title = "Announcement", onBack = onBack) {
-        Column(
-            Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(C.card)
-                .border(1.dp, C.border, RoundedCornerShape(14.dp))
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(if (a.priority == Priority.CRITICAL) "🔴" else "📢", fontSize = 24.sp)
-                if (a.priority == Priority.CRITICAL) {
-                    Box(
-                        Modifier.clip(RoundedCornerShape(50))
-                            .background(C.dangerLt)
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            "Critical",
-                            color = C.danger,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-            }
-            Text(
-                a.title,
-                color = C.text,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(a.body, color = C.text, fontSize = 14.sp, lineHeight = 20.sp)
-            Text(
-                "Posted by ${a.sentBy} · ${a.sentAt}",
-                color = C.muted,
-                fontSize = 12.sp
-            )
-            if (isRead) {
-                Text("✓ Marked as read", color = C.greenText, fontSize = 12.sp)
-            }
-        }
-        if (a.priority == Priority.CRITICAL && !isAcked) {
-            PrimaryButton(
-                text = "✓ Acknowledge",
-                onClick = { acknowledge() },
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-        if (a.priority == Priority.CRITICAL && isAcked) {
-            Column(
-                Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(C.sageLt)
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    "✓ You have acknowledged this announcement",
-                    color = C.greenText,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun B_EmergencyContact(
     boarder: Boarder,
+    onBoarderUpdate: (Boarder) -> Unit,
     showToast: (String) -> Unit,
     onBack: () -> Unit
 ) {
     var editing by remember { mutableStateOf(false) }
     var formName by remember { mutableStateOf(boarder.emergencyContact.name) }
-    var formRelationship by remember { mutableStateOf(boarder.emergencyContact.relationship) }
     var formPhone by remember { mutableStateOf(boarder.emergencyContact.phone) }
     val context = LocalContext.current
 
@@ -532,7 +220,7 @@ private fun B_EmergencyContact(
             Modifier.fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
                 .background(C.dangerLt)
-                .border(1.dp, Color(0xFFF5C4C4), RoundedCornerShape(14.dp))
+                .border(1.dp, C.danger.copy(alpha = 0.25f), RoundedCornerShape(14.dp))
                 .padding(16.dp)
         ) {
             Text(
@@ -557,11 +245,6 @@ private fun B_EmergencyContact(
                     onChange = { formName = it }
                 )
                 Input(
-                    label = "Relationship",
-                    value = formRelationship,
-                    onChange = { formRelationship = it }
-                )
-                Input(
                     label = "Phone Number",
                     value = formPhone,
                     onChange = { formPhone = it }
@@ -569,6 +252,18 @@ private fun B_EmergencyContact(
                 PrimaryButton(
                     text = "Save Contact",
                     onClick = {
+                        if (formName.isBlank() || formPhone.isBlank()) {
+                            showToast("Please enter contact name and phone number")
+                            return@PrimaryButton
+                        }
+                        onBoarderUpdate(
+                            boarder.copy(
+                                emergencyContact = boarder.emergencyContact.copy(
+                                    name = formName.trim(),
+                                    phone = formPhone.trim()
+                                )
+                            )
+                        )
                         editing = false
                         showToast("Emergency contact updated")
                     },
@@ -597,7 +292,6 @@ private fun B_EmergencyContact(
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
                 )
-                Text(formRelationship, color = C.muted, fontSize = 14.sp)
                 Row(
                     Modifier.fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
@@ -650,7 +344,7 @@ private fun B_Maintenance(
                 category = category,
                 description = description,
                 status = MaintStatus.OPEN,
-                submittedAt = "Sep 7, now"
+                submittedAt = java.text.SimpleDateFormat("MMM d, yyyy · h:mm a", java.util.Locale.ENGLISH).format(java.util.Date())
             )
         )
         showToast("Maintenance request submitted")
@@ -681,7 +375,7 @@ private fun B_Maintenance(
                 Modifier.fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
                     .background(C.warnLt)
-                    .border(1.dp, Color(0xFFF0DCA8), RoundedCornerShape(14.dp))
+                    .border(1.dp, C.warn.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
                     .padding(16.dp)
             ) {
                 Text(
@@ -790,117 +484,6 @@ private fun B_Maintenance(
                     title = "No reports yet",
                     sub = "Tap + New to report an issue"
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun B_Curfew(
-    boarder: Boarder,
-    curfew: List<CurfewRecord>,
-    setCurfew: (List<CurfewRecord>) -> Unit,
-    showToast: (String) -> Unit,
-    onBack: () -> Unit
-) {
-    val my = curfew.find { c -> c.boarderId == boarder.id }
-    val isIn = my?.status == CurfewStatus.COMPLIANT
-
-    fun checkIn() {
-        setCurfew(curfew.map { c ->
-            if (c.boarderId == boarder.id) {
-                c.copy(status = CurfewStatus.COMPLIANT, checkedInAt = "Just now")
-            } else c
-        })
-        showToast("✅ Curfew check-in recorded")
-    }
-
-    fun checkOut() {
-        setCurfew(curfew.map { c ->
-            if (c.boarderId == boarder.id) {
-                c.copy(status = CurfewStatus.PENDING, checkedInAt = null)
-            } else c
-        })
-        showToast("Checked out. Please be back by 10:00 PM.")
-    }
-
-    Column(Modifier.fillMaxSize().background(C.bg)) {
-        Header(title = "Curfew Check-in", onBack = onBack)
-        Column(
-            Modifier.fillMaxWidth()
-                .weight(1f)
-                .padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    if (isIn) "🏠" else "🌙",
-                    fontSize = 60.sp,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-                Text(
-                    if (isIn) "You are checked in" else "Curfew: 10:00 PM",
-                    color = C.text,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    "Sep 7, 2026" + (my?.checkedInAt?.let { " · Checked in: $it" } ?: ""),
-                    color = C.muted,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
-
-            Column(
-                Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(if (isIn) C.sageLt else C.warnLt)
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    if (isIn) "You are inside and accounted for" else "Please check in before 10:00 PM",
-                    color = if (isIn) C.greenText else C.warn,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center
-                )
-            }
-
-            if (!isIn) {
-                Box(
-                    Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(C.sage)
-                        .clickable { checkIn() }
-                        .padding(vertical = 20.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        "✅ Check In Now",
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            } else {
-                Box(
-                    Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(C.dangerLt)
-                        .clickable { checkOut() }
-                        .padding(vertical = 20.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        "Going Out",
-                        color = C.danger,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
             }
         }
     }

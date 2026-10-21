@@ -1,5 +1,6 @@
 package com.example.mbhm.guardian
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,7 +23,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,13 +30,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mbhm.model.*
 import com.example.mbhm.ui.components.*
-import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -49,15 +47,8 @@ fun GSecurity(
     setIncidents: (List<Incident>) -> Unit,
     maintenance: List<MaintenanceReport>,
     setMaintenance: (List<MaintenanceReport>) -> Unit,
-    rooms: List<HouseRoom>,
-    jobs: List<HouseJob>,
-    guardianProfile: GuardianProfile?,
-    onCreateBoarder: suspend (NewBoarderInput) -> String?,
-    onSetPassword: suspend (String, String) -> Boolean,
     deepLink: String?,
     onDeepLinkConsumed: () -> Unit,
-    onViewPayments: (Boarder) -> Unit,
-    onViewAttendance: (Boarder) -> Unit,
     showToast: (String) -> Unit
 ) {
     var screen by remember { mutableStateOf(deepLink ?: "overview") }
@@ -67,26 +58,14 @@ fun GSecurity(
         screenData = d
     }
 
+    BackHandler(enabled = screen != "overview") { nav("overview") }
+
     LaunchedEffect(deepLink) {
         if (deepLink != null) onDeepLinkConsumed()
     }
 
     if (screen == "contacts") {
         GSec_Contacts(boarders, setBoarders, showToast, onBack = { nav("overview") })
-        return
-    }
-    if (screen == "boarders") {
-        GSec_BoardersList(
-            boarders, setBoarders, showToast,
-            rooms = rooms,
-            jobs = jobs,
-            guardianProfile = guardianProfile,
-            onCreateBoarder = onCreateBoarder,
-            onSetPassword = onSetPassword,
-            onViewPayments = onViewPayments,
-            onViewAttendance = onViewAttendance,
-            onBack = { nav("overview") }
-        )
         return
     }
     if (screen == "incidents") {
@@ -185,15 +164,6 @@ fun GSecurity(
                     "${incidents.count { !it.resolved }} unresolved",
                     false
                 ) { nav("incidents") }
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                secNavCard(
-                    Modifier.weight(1f),
-                    "👥",
-                    "Boarders",
-                    "${boarders.size} registered",
-                    false
-                ) { nav("boarders") }
             }
         }
 
@@ -301,12 +271,6 @@ private val contactColumns = listOf(
     TableColumn("Room", 0.45f, end = true),
     TableColumn("Emergency", 1.1f, end = true),
     TableColumn("", 0.7f, end = true)
-)
-
-private val securityBoarderColumns = listOf(
-    TableColumn("Boarder", 1.15f),
-    TableColumn("Room", 0.45f, end = true),
-    TableColumn("", 1.45f, end = true)
 )
 
 private val incidentColumns = listOf(
@@ -551,399 +515,6 @@ private fun GSec_Contacts(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun GSec_BoardersList(
-    boarders: List<Boarder>,
-    setBoarders: (List<Boarder>) -> Unit,
-    showToast: (String) -> Unit,
-    rooms: List<HouseRoom>,
-    jobs: List<HouseJob>,
-    guardianProfile: GuardianProfile?,
-    onCreateBoarder: suspend (NewBoarderInput) -> String?,
-    onSetPassword: suspend (String, String) -> Boolean,
-    onViewPayments: (Boarder) -> Unit,
-    onViewAttendance: (Boarder) -> Unit,
-    onBack: () -> Unit
-) {
-    val scope = rememberCoroutineScope()
-    var mode by remember { mutableStateOf("list") }
-    var editingId by remember { mutableStateOf<String?>(null) }
-    var editRoom by remember { mutableStateOf("") }
-    var editFloor by remember { mutableStateOf("") }
-    var editJob by remember { mutableStateOf("") }
-    var editPassword by remember { mutableStateOf("") }
-
-    var addName by remember { mutableStateOf("") }
-    var addId by remember { mutableStateOf("") }
-    var addRoom by remember { mutableStateOf("") }
-    var addFloor by remember { mutableStateOf("") }
-    var addJob by remember { mutableStateOf("") }
-    var addRate by remember { mutableStateOf("") }
-    var addPassword by remember { mutableStateOf("") }
-    var addConfirm by remember { mutableStateOf("") }
-    var addError by remember { mutableStateOf<String?>(null) }
-    var adding by remember { mutableStateOf(false) }
-
-    fun occupants(roomName: String) = boarders.count { it.room == roomName }
-
-    fun roomOptions(): List<Option> = rooms.map { r ->
-        Option(r.name, "${r.name} (${occupants(r.name)}/${r.maxCapacity})")
-    }
-
-    fun floorOptions(current: String): List<Option> {
-        val floors = rooms.map { it.floor }.filter { it.isNotBlank() }.distinct().sorted()
-        val all = if (current.isNotBlank() && current !in floors && current != "—") {
-            floors + current
-        } else floors
-        return all.map { Option(it, it) }
-    }
-
-    fun jobOptions(current: String): List<Option> {
-        val names = jobs.map { it.name }.distinct().sorted()
-        val all = if (current.isNotBlank() && current !in names && current != "—") {
-            names + current
-        } else names
-        return all.map { Option(it, it) }
-    }
-
-    fun startEdit(b: Boarder) {
-        editingId = b.id
-        editRoom = b.room
-        editFloor = b.floor
-        editJob = b.job
-        editPassword = ""
-    }
-
-    fun validPassword(pwd: String): String? = when {
-        pwd.length < 6 -> "Password must be at least 6 characters"
-        !pwd.any { it.isUpperCase() } || !pwd.any { it.isLowerCase() } ->
-            "Password must contain uppercase and lowercase letters"
-        !pwd.any { it.isDigit() } -> "Password must contain at least one number"
-        !pwd.any { !it.isLetterOrDigit() } -> "Password must contain a special character (e.g. !@#)"
-        else -> null
-    }
-
-    fun saveEdit() {
-        val b = boarders.find { it.id == editingId } ?: return
-        val newRoom = editRoom.trim()
-        if (newRoom.isBlank()) {
-            showToast("Please select a room")
-            return
-        }
-        if (newRoom != b.room) {
-            val room = rooms.find { it.name == newRoom }
-            if (room != null && occupants(newRoom) >= room.maxCapacity) {
-                showToast("Room $newRoom is full (${room.maxCapacity}/${room.maxCapacity})")
-                return
-            }
-        }
-        val pwd = editPassword.trim()
-        if (pwd.isNotEmpty()) {
-            validPassword(pwd)?.let { showToast(it); return }
-        }
-        setBoarders(
-            boarders.map {
-                if (it.id == editingId) {
-                    it.copy(room = newRoom, floor = editFloor.trim(), job = editJob.trim())
-                } else it
-            }
-        )
-        editingId = null
-        if (pwd.isNotEmpty()) {
-            val idNumber = b.idNumber.ifBlank { b.id }
-            scope.launch {
-                val ok = onSetPassword(idNumber, pwd)
-                showToast(
-                    if (ok) "Room updated and password changed for ${b.name}"
-                    else "Room updated, but the password could not be changed"
-                )
-            }
-        } else {
-            showToast("Room assignment updated for ${b.name}")
-        }
-    }
-
-    fun submitAdd() {
-        addError = null
-        if (addName.isBlank()) { addError = "Please enter the boarder's full name"; return }
-        if (addId.isBlank()) { addError = "Please enter an ID number"; return }
-        if (addRoom.isBlank()) { addError = "Please select a room"; return }
-        val rate = addRate.trim().toIntOrNull()
-        if (rate == null || rate < 0) { addError = "Please enter a valid monthly payment"; return }
-        val room = rooms.find { it.name == addRoom }
-        if (room != null && occupants(addRoom) >= room.maxCapacity) {
-            addError = "Room $addRoom is full (${room.maxCapacity}/${room.maxCapacity})"
-            return
-        }
-        val pwdErr = validPassword(addPassword)
-        if (pwdErr != null) { addError = pwdErr; return }
-        if (addPassword != addConfirm) { addError = "Passwords do not match"; return }
-
-        adding = true
-        scope.launch {
-            val err = onCreateBoarder(
-                NewBoarderInput(
-                    name = addName.trim(),
-                    idNumber = addId.trim(),
-                    room = addRoom.trim(),
-                    floor = addFloor.trim(),
-                    job = addJob.trim(),
-                    monthlyRate = addRate.trim(),
-                    password = addPassword,
-                    confirm = addConfirm
-                )
-            )
-            adding = false
-            if (err == null) {
-                mode = "list"
-                addName = ""; addId = ""; addRoom = ""; addFloor = ""; addJob = ""
-                addRate = ""
-                addPassword = ""; addConfirm = ""; addError = null
-                showToast("Boarder account created")
-            } else {
-                addError = err
-            }
-        }
-    }
-
-    if (mode == "add") {
-        Column(Modifier.fillMaxSize().background(C.bg)) {
-            Header(title = "Add Boarder", onBack = { mode = "list"; addError = null })
-            ScrollBody(modifier = Modifier.weight(1f), spacing = 14) {
-                Text(
-                    "Only the basic info is needed. You issue the ID number and create the password.",
-                    color = C.muted,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-                Input(label = "Full Name", value = addName, onChange = { addName = it })
-                Input(
-                    label = "ID Number (used to sign in)",
-                    value = addId,
-                    onChange = { addId = it },
-                    placeholder = "e.g. MBH-0001"
-                )
-                Select(
-                    label = "Room",
-                    value = addRoom,
-                    onChange = { v ->
-                        addRoom = v
-                        rooms.find { it.name == v }?.let { addFloor = it.floor }
-                    },
-                    options = roomOptions()
-                )
-                Select(
-                    label = "Floor",
-                    value = addFloor,
-                    onChange = { addFloor = it },
-                    options = floorOptions(addFloor)
-                )
-                Select(
-                    label = "Job",
-                    value = addJob,
-                    onChange = { addJob = it },
-                    options = jobOptions(addJob)
-                )
-                Input(
-                    label = "Monthly Payment (₱)",
-                    value = addRate,
-                    onChange = { v -> addRate = v.filter { it.isDigit() } },
-                    placeholder = "e.g. 3500",
-                    keyboardType = KeyboardType.Number
-                )
-                Input(
-                    label = "Password",
-                    value = addPassword,
-                    onChange = { addPassword = it }
-                )
-                Input(
-                    label = "Confirm Password",
-                    value = addConfirm,
-                    onChange = { addConfirm = it }
-                )
-
-                addError?.let {
-                    Text(it, color = C.danger, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                }
-
-                PrimaryButton(
-                    text = if (adding) "Creating…" else "Create Boarder Account",
-                    onClick = { submitAdd() },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !adding
-                )
-            }
-        }
-        return
-    }
-
-    Column(Modifier.fillMaxSize().background(C.bg)) {
-        Header(title = "Boarders List", onBack = onBack)
-        ScrollBody(modifier = Modifier.weight(1f), spacing = 12) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(C.primary)
-                    .clickable {
-                        editingId = null
-                        mode = "add"
-                    }
-                    .padding(vertical = 12.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("+ Add Boarder", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-            }
-
-            Text(
-                "${boarders.size} boarders registered",
-                color = C.muted,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
-            )
-
-            boarders.forEachIndexed { index, b ->
-                TableRow(
-                    columns = securityBoarderColumns,
-                    divider = index > 0,
-                    cells = listOf(
-                        {
-                            Column {
-                                Text(
-                                    b.name,
-                                    color = C.text,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    "ID ${b.idNumber.ifBlank { "—" }} · ${b.job}",
-                                    color = C.muted,
-                                    fontSize = 10.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                )
-                            }
-                        },
-                        {
-                            Text(b.room, color = C.muted, fontSize = 12.sp)
-                        },
-                        {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                SecActionPill("💳", "Pay", C.primaryLt, C.primary) { onViewPayments(b) }
-                                SecActionPill("📅", "Attn", C.primaryLt, C.primary) { onViewAttendance(b) }
-                                Text(
-                                    if (editingId == b.id) "✓" else "✏",
-                                    color = C.primary,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.clickable {
-                                        if (editingId == b.id) {
-                                            saveEdit()
-                                        } else {
-                                            startEdit(b)
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                    )
-                )
-
-                if (editingId == b.id) {
-                    Column(
-                        Modifier.fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 8.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(C.bg)
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text(
-                            "ROOM ASSIGNMENT & ACCOUNT",
-                            color = C.muted,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            letterSpacing = 0.3.sp
-                        )
-                        Select(
-                            label = "Room Number",
-                            value = editRoom,
-                            onChange = { v ->
-                                editRoom = v
-                                rooms.find { it.name == v }?.let { editFloor = it.floor }
-                            },
-                            options = roomOptions()
-                        )
-                        Select(
-                            label = "Floor",
-                            value = editFloor,
-                            onChange = { editFloor = it },
-                            options = floorOptions(editFloor)
-                        )
-                        Select(
-                            label = "Job",
-                            value = editJob,
-                            onChange = { editJob = it },
-                            options = jobOptions(editJob)
-                        )
-                        Input(
-                            label = "New Password (leave blank to keep the current one)",
-                            value = editPassword,
-                            onChange = { editPassword = it }
-                        )
-                        ActionPair(
-                            onCancel = { editingId = null; editPassword = "" },
-                            onConfirm = { saveEdit() },
-                            confirmLabel = "Save"
-                        )
-                    }
-                }
-            }
-
-            if (boarders.isEmpty()) {
-                Box(
-                    Modifier.fillMaxWidth().padding(vertical = 32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("No boarders registered yet", color = C.muted, fontSize = 14.sp)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SecActionPill(
-    icon: String,
-    label: String,
-    bg: Color,
-    fg: Color,
-    onClick: () -> Unit
-) {
-    Row(
-        Modifier.clip(RoundedCornerShape(50))
-            .background(bg)
-            .clickable { onClick() }
-            .padding(horizontal = 8.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(icon, fontSize = 11.sp)
-        Text(
-            label,
-            color = fg,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(start = 4.dp)
-        )
     }
 }
 

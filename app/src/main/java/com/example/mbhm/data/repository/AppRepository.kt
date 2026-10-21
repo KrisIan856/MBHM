@@ -1,13 +1,16 @@
 package com.example.mbhm.data.repository
 
 import android.content.Context
+import androidx.room.withTransaction
 import at.favre.lib.crypto.bcrypt.BCrypt
 import com.example.mbhm.data.database.AppDatabase
 import com.example.mbhm.data.entity.*
 import com.example.mbhm.data.sync.SyncPayload
 import com.example.mbhm.model.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 class AppRepository private constructor(context: Context) {
@@ -36,8 +39,20 @@ class AppRepository private constructor(context: Context) {
 
     suspend fun authenticateUser(username: String, password: String): UserEntity? {
         val user = db.userDao().getByUsername(username.trim()) ?: return null
-        val result = BCrypt.verifyer().verify(password.toCharArray(), user.passwordHash)
-        return if (result.verified) user else null
+        val verified = withContext(Dispatchers.Default) {
+            BCrypt.verifyer().verify(password.toCharArray(), user.passwordHash).verified
+        }
+        return if (verified) user else null
+    }
+
+    private fun passwordError(password: String): String? = when {
+        password.length < 6 -> "Password must be at least 6 characters"
+        !(password.any { it.isUpperCase() } && password.any { it.isLowerCase() }) ->
+            "Password must contain uppercase and lowercase letters"
+        !password.any { it.isDigit() } -> "Password must contain at least one number"
+        !password.any { !it.isLetterOrDigit() } ->
+            "Password must contain a special character (e.g. !@#)"
+        else -> null
     }
 
     /**
@@ -50,29 +65,34 @@ class AppRepository private constructor(context: Context) {
         guardianDetails: com.example.mbhm.model.GuardianDetails
     ): UserEntity? {
         val trimmed = username.trim()
-        if (trimmed.isEmpty() || password.isEmpty()) return null
+        if (trimmed.isEmpty() || passwordError(password) != null) return null
         if (db.userDao().getByUsername(trimmed) != null) return null
 
+        val passwordHash = withContext(Dispatchers.Default) {
+            BCrypt.withDefaults().hashToString(12, password.toCharArray())
+        }
         val newUser = UserEntity(
             username = trimmed,
-            passwordHash = BCrypt.withDefaults().hashToString(12, password.toCharArray()),
+            passwordHash = passwordHash,
             role = Role.GUARDIAN,
             boarderId = null,
             displayName = guardianDetails.fullName.takeIf { it.isNotBlank() }
         )
-        db.userDao().insert(newUser)
 
-        db.guardianProfileDao().insert(
-            GuardianProfileEntity.fromDomain(
-                GuardianProfile(
-                    name = guardianDetails.fullName,
-                    phone = guardianDetails.phone,
-                    email = "",
-                    houseName = guardianDetails.houseName,
-                    houseAddress = guardianDetails.houseAddress
+        db.withTransaction {
+            db.userDao().insert(newUser)
+            db.guardianProfileDao().insert(
+                GuardianProfileEntity.fromDomain(
+                    GuardianProfile(
+                        name = guardianDetails.fullName,
+                        phone = guardianDetails.phone,
+                        email = "",
+                        houseName = guardianDetails.houseName,
+                        houseAddress = guardianDetails.houseAddress
+                    )
                 )
             )
-        )
+        }
         return newUser
     }
 
@@ -95,6 +115,7 @@ class AppRepository private constructor(context: Context) {
 
         val room = input.room.trim()
         if (room.isEmpty()) return "Please select a room"
+        passwordError(input.password)?.let { return it }
 
         val capacity = db.roomDao().getByName(room)?.maxCapacity ?: 0
         if (capacity > 0 && db.boarderDao().countInRoom(room) >= capacity) {
@@ -102,16 +123,9 @@ class AppRepository private constructor(context: Context) {
         }
 
         val boarderId = UUID.randomUUID().toString()
-        val hashed = BCrypt.withDefaults().hashToString(12, input.password.toCharArray())
-        db.userDao().insert(
-            UserEntity(
-                username = idNumber,
-                passwordHash = hashed,
-                role = Role.BOARDER,
-                boarderId = boarderId,
-                displayName = name
-            )
-        )
+        val hashed = withContext(Dispatchers.Default) {
+            BCrypt.withDefaults().hashToString(12, input.password.toCharArray())
+        }
 
         val billing = getBillingSettings()
         val initials = name.split(" ")
@@ -120,46 +134,57 @@ class AppRepository private constructor(context: Context) {
             .joinToString("")
             .ifBlank { "—" }
 
-        db.boarderDao().insert(
-            BoarderEntity.fromDomain(
-                Boarder(
-                    id = boarderId,
-                    name = name,
-                    room = room,
-                    floor = input.floor.trim().ifBlank { "—" },
-                    initials = initials,
-                    avatarColor = "#4A7C59",
-                    phone = "",
-                    email = "",
-                    joinDate = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.ENGLISH)
-                        .format(java.util.Date()),
-                    monthlyRate = input.monthlyRate.trim().toIntOrNull()?.coerceAtLeast(0) ?: 0,
-                    dueDay = billing?.dueDay ?: 5,
-                    gracePeriodDays = billing?.gracePeriodDays ?: 3,
-                    paymentStatus = PayStatus.PENDING,
-                    latePenaltyType = PenaltyType.FLAT,
-                    latePenaltyAmount = 0,
-                    emergencyContact = EmergencyContact(name = "", phone = ""),
-                    guardianContact = GuardianContact(
-                        name = guardianProfile?.name.orEmpty().ifBlank { "Guardian" },
-                        phone = guardianProfile?.phone.orEmpty()
-                    ),
-                    job = input.job.trim().ifBlank { "—" },
-                    idNumber = idNumber
-                )
+        val newBoarder = BoarderEntity.fromDomain(
+            Boarder(
+                id = boarderId,
+                name = name,
+                room = room,
+                floor = input.floor.trim().ifBlank { "—" },
+                initials = initials,
+                avatarColor = "#4A7C59",
+                phone = "",
+                email = "",
+                joinDate = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.ENGLISH)
+                    .format(java.util.Date()),
+                monthlyRate = input.monthlyRate.trim().toIntOrNull()?.coerceAtLeast(0) ?: 0,
+                dueDay = billing?.dueDay ?: 5,
+                gracePeriodDays = billing?.gracePeriodDays ?: 3,
+                paymentStatus = PayStatus.PENDING,
+                latePenaltyType = PenaltyType.FLAT,
+                latePenaltyAmount = 0,
+                emergencyContact = EmergencyContact(name = "", phone = ""),
+                guardianContact = GuardianContact(
+                    name = guardianProfile?.name.orEmpty().ifBlank { "Guardian" },
+                    phone = guardianProfile?.phone.orEmpty()
+                ),
+                job = input.job.trim().ifBlank { "—" },
+                idNumber = idNumber
             )
         )
+
+        db.withTransaction {
+            db.userDao().insert(
+                UserEntity(
+                    username = idNumber,
+                    passwordHash = hashed,
+                    role = Role.BOARDER,
+                    boarderId = boarderId,
+                    displayName = name
+                )
+            )
+            db.boarderDao().insert(newBoarder)
+        }
         return null
     }
 
     /** Guardian-side password reset for a boarder account (username == ID number). */
     suspend fun setAccountPassword(username: String, newPassword: String): Boolean {
+        if (passwordError(newPassword) != null) return false
         val user = db.userDao().getByUsername(username.trim()) ?: return false
-        db.userDao().insert(
-            user.copy(
-                passwordHash = BCrypt.withDefaults().hashToString(12, newPassword.toCharArray())
-            )
-        )
+        val hash = withContext(Dispatchers.Default) {
+            BCrypt.withDefaults().hashToString(12, newPassword.toCharArray())
+        }
+        db.userDao().insert(user.copy(passwordHash = hash))
         return true
     }
 
@@ -246,7 +271,10 @@ class AppRepository private constructor(context: Context) {
             SessionType.EVENING to (schedule.eveningStart to schedule.eveningEnd)
         )
         for ((type, window) in pairs) {
-            if (db.attendanceSessionDao().getByDateAndType(today, type.name) == null) {
+            val qrValidityMins =
+                if (type == SessionType.MORNING) schedule.morningQRMins else schedule.eveningQRMins
+            val existing = db.attendanceSessionDao().getByDateAndType(today, type.name)
+            if (existing == null) {
                 db.attendanceSessionDao().insert(
                     AttendanceSessionEntity.fromDomain(
                         AttendanceSession(
@@ -255,10 +283,25 @@ class AppRepository private constructor(context: Context) {
                             date = today,
                             windowStart = window.first,
                             windowEnd = window.second,
-                            qrValidityMins = if (type == SessionType.MORNING) schedule.morningQRMins else schedule.eveningQRMins
+                            qrValidityMins = qrValidityMins
                         )
                     )
                 )
+            } else {
+                // Today's sessions are created once, but a schedule edit must still
+                // apply to the attendance screen immediately.
+                val updated = existing.copy(
+                    windowStart = window.first,
+                    windowEnd = window.second,
+                    qrValidityMins = qrValidityMins
+                )
+                if (updated != existing) {
+                    db.attendanceSessionDao().update(updated)
+                    db.attendanceRecordDao().updateAutoAbsenceReason(
+                        sessionId = updated.id,
+                        reason = "Auto-marked absent · window ended ${updated.windowEnd}"
+                    )
+                }
             }
         }
     }
@@ -280,14 +323,38 @@ class AppRepository private constructor(context: Context) {
 
         val recorded = db.attendanceRecordDao().getAllOnce()
         val timeFmt = java.text.SimpleDateFormat("MMM d, yyyy h:mm a", java.util.Locale.ENGLISH)
+        val dateFmt = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.ENGLISH)
+
+        fun parseDate(value: String?): Long? =
+            value?.let { runCatching { dateFmt.parse(it)?.time }.getOrNull() }
+
+        val approvedLeave = db.leaveNoticeDao().getAllOnce().filter {
+            it.status == LeaveNoticeStatus.APPROVED ||
+                it.status == LeaveNoticeStatus.DEPARTED ||
+                it.status == LeaveNoticeStatus.COMPLETED
+        }
+        val joinDates = boarders.associate { it.id to parseDate(it.joinDate) }
+
+        fun wasOnApprovedLeave(boarderId: String, sessionMillis: Long): Boolean =
+            approvedLeave.any { notice ->
+                if (notice.boarderId != boarderId) return@any false
+                val start = parseDate(notice.leaveDate) ?: return@any false
+                val end = parseDate(notice.expectedReturnDate) ?: return@any false
+                sessionMillis in start..end
+            }
 
         val pending = sessions.mapNotNull { sess ->
             val endMillis = runCatching { timeFmt.parse("${sess.date} ${sess.windowEnd}")?.time }
                 .getOrNull() ?: return@mapNotNull null
             if (now <= endMillis) return@mapNotNull null
+            val sessionMillis = parseDate(sess.date) ?: return@mapNotNull null
 
             val recordedIds = recorded.filter { it.sessionId == sess.id }.map { it.boarderId }.toSet()
-            sess to boarders.filter { it.id !in recordedIds }
+            sess to boarders.filter { b ->
+                b.id !in recordedIds &&
+                    (joinDates[b.id]?.let { sessionMillis >= it } ?: true) &&
+                    !wasOnApprovedLeave(b.id, sessionMillis)
+            }
         }
 
         val toInsert = pending.flatMap { (sess, missed) ->

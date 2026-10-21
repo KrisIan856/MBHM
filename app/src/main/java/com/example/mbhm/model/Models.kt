@@ -128,6 +128,7 @@ data class PaymentRecord(
     val status: PayStatus,
     val receiptStatus: ReceiptStatus? = null,
     val receiptFileName: String? = null,
+    val receiptPath: String? = null,
     val rejectionReason: String? = null,
     val amountPaid: Int? = null,
     val guardianReceiptFileName: String? = null,

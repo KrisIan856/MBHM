@@ -1,5 +1,6 @@
 package com.example.mbhm.boarder
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -62,6 +63,7 @@ import com.example.mbhm.ui.components.PayChip
 import com.example.mbhm.ui.components.PayPeriodPager
 import com.example.mbhm.ui.components.PrimaryButton
 import com.example.mbhm.ui.components.ReceiptChip
+import com.example.mbhm.ui.components.ReceiptImage
 import com.example.mbhm.ui.components.rememberPrefBoolean
 import com.example.mbhm.ui.components.Screen
 import com.example.mbhm.ui.components.ScrollBody
@@ -72,6 +74,7 @@ import com.example.mbhm.ui.components.TableColumn
 import com.example.mbhm.ui.components.TableRow
 import com.example.mbhm.ui.components.fileNameOf
 import com.example.mbhm.ui.components.money
+import com.example.mbhm.ui.components.storeReceiptFile
 import com.example.mbhm.ui.components.parseIsoDate
 
 /** Month table columns, mirroring the guardian's month-by-month table. */
@@ -117,6 +120,7 @@ fun BPayments(
     var selectedMonth by remember { mutableStateOf(currentPeriod()) }
     var selectedFileName by remember { mutableStateOf<String?>(null) }
     var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedFilePath by remember { mutableStateOf<String?>(null) }
     var showPreviewModal by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
@@ -139,6 +143,8 @@ fun BPayments(
     var newPayOpen by remember { mutableStateOf(false) }
     var newAmount by remember { mutableStateOf(boarder.monthlyRate.toString()) }
     var newMethod by remember { mutableStateOf("gcash") }
+
+    BackHandler(enabled = screen != "main") { screen = "main" }
 
     if (screen == "history") {
         BPay_History(
@@ -166,6 +172,7 @@ fun BPayments(
         // the guardian's in-person payment accumulates onto a partial month.
         val newPaidTotal = (account.paid + amount).coerceAtMost(account.due)
         val settled = newPaidTotal >= account.due
+        val resetProof = existing?.receiptStatus != null
         val rec = PaymentRecord(
             id = existing?.id ?: ("p" + System.currentTimeMillis()),
             boarderId = boarder.id,
@@ -178,9 +185,10 @@ fun BPayments(
                 else -> PayMethod.CASH
             },
             status = if (settled) PayStatus.PAID else PayStatus.PARTIAL,
-            receiptStatus = existing?.receiptStatus,
-            receiptFileName = existing?.receiptFileName,
-            rejectionReason = existing?.rejectionReason,
+            receiptStatus = if (resetProof) null else existing?.receiptStatus,
+            receiptFileName = if (resetProof) null else existing?.receiptFileName,
+            receiptPath = if (resetProof) null else existing?.receiptPath,
+            rejectionReason = if (resetProof) null else existing?.rejectionReason,
             recordedBy = RecordedBy.BOARDER,
             notes = if (settled) "Paid in full" else "Partial payment — ${money(account.due - newPaidTotal)} remaining"
         )
@@ -200,13 +208,15 @@ fun BPayments(
     ) { uri ->
         if (uri != null) {
             val fileName = context.fileNameOf(uri)
+            val storedPath = context.storeReceiptFile(uri, currentRec?.id ?: "proof")
             selectedFileName = fileName
-            selectedFileUri = uri
+            selectedFilePath = storedPath
+            selectedFileUri = storedPath?.let { Uri.fromFile(java.io.File(it)) } ?: uri
             showPreviewModal = true
         }
     }
 
-    fun submitProof(fileName: String) {
+    fun submitProof(fileName: String, filePath: String?) {
         val rec = currentRec
         if (rec != null) {
             setPayments(payments.map { p ->
@@ -214,6 +224,7 @@ fun BPayments(
                     p.copy(
                         receiptStatus = ReceiptStatus.PENDING_REVIEW,
                         receiptFileName = fileName,
+                        receiptPath = filePath ?: p.receiptPath,
                         rejectionReason = null
                     )
                 } else p
@@ -231,11 +242,12 @@ fun BPayments(
                     status = PayStatus.PENDING,
                     receiptStatus = ReceiptStatus.PENDING_REVIEW,
                     receiptFileName = fileName,
+                    receiptPath = filePath,
                     recordedBy = RecordedBy.BOARDER
                 )
             )
         }
-        showToast("Payment proof uploaded — waiting for guardian verification")
+        showToast("Payment proof attached — waiting for guardian verification")
     }
 
     Screen(
@@ -462,6 +474,15 @@ fun BPayments(
                         ReceiptChip(status = recStatus)
                     }
 
+                    ReceiptImage(
+                        path = rec.receiptPath,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .border(1.dp, C.border, RoundedCornerShape(10.dp))
+                    )
+
                     if (recStatus == ReceiptStatus.REJECTED) {
                         Column(
                             modifier = Modifier
@@ -660,16 +681,19 @@ fun BPayments(
 
             ActionPair(
                 onCancel = {
+                    selectedFilePath?.let { path -> runCatching { java.io.File(path).delete() } }
                     showPreviewModal = false
                     selectedFileName = null
                     selectedFileUri = null
+                    selectedFilePath = null
                 },
                 onConfirm = {
                     val fn = selectedFileName ?: "payment_proof.jpg"
-                    submitProof(fn)
+                    submitProof(fn, selectedFilePath)
                     showPreviewModal = false
                     selectedFileName = null
                     selectedFileUri = null
+                    selectedFilePath = null
                 },
                 confirmLabel = "Submit Proof"
             )

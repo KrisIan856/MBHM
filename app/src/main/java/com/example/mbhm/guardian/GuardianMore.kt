@@ -1,5 +1,6 @@
 package com.example.mbhm.guardian
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -65,14 +66,27 @@ fun GMore(
     onSaveRoom: (HouseRoom) -> Unit,
     onDeleteRoom: (String) -> Unit,
     onSaveJob: (HouseJob) -> Unit,
-    onDeleteJob: (String) -> Unit
+    onDeleteJob: (String) -> Unit,
+    initialScreen: String = "main",
+    onInitialScreenConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val appRepository = remember(context) { AppRepository.getInstance(context) }
     val scope = rememberCoroutineScope()
     val savedProfile by appRepository.observeGuardianProfile().collectAsState(initial = null)
-    var screen by remember { mutableStateOf("main") }
+    var screen by remember { mutableStateOf(initialScreen) }
     var showLogoutDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        onInitialScreenConsumed()
+    }
+
+    BackHandler(enabled = screen != "main") {
+        screen = when (screen) {
+            "schedule", "billing", "rooms" -> "settings"
+            else -> "main"
+        }
+    }
 
     val profile = GProfile(
         name = savedProfile?.name?.takeIf { it.isNotBlank() } ?: "Guardian",
@@ -203,7 +217,8 @@ fun GMore(
         DeviceSyncScreen(
             appRepository = appRepository,
             onBack = { screen = "main" },
-            showToast = showToast
+            showToast = showToast,
+            allowHosting = true
         )
         return
     }
@@ -252,7 +267,6 @@ fun GMore(
                 tagFg = C.primary
             ) {
                 val attendanceAlerts = rememberPrefBoolean("g_notif_attendance_alerts", true)
-                val autoRefreshQr = rememberPrefBoolean("g_qr_auto_refresh", true)
                 val manualOverride = rememberPrefBoolean("g_qr_manual_override_alerts", true)
                 val calendarColors = rememberPrefBoolean("notif_calendar_colors", true)
                 Toggle(
@@ -266,12 +280,6 @@ fun GMore(
                     sub = "Color calendar days green when present, red when absent",
                     checked = calendarColors.value,
                     onChange = { calendarColors.value = it; showToast("Attendance setting saved") }
-                )
-                Toggle(
-                    label = "Auto-Refresh QR",
-                    sub = "Regenerate the scan code every session",
-                    checked = autoRefreshQr.value,
-                    onChange = { autoRefreshQr.value = it; showToast("Attendance setting saved") }
                 )
                 Toggle(
                     label = "Manual Check Alerts",

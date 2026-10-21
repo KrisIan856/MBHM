@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.activity.compose.BackHandler
 import android.app.Activity
+import android.content.Context
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,6 +40,8 @@ import com.example.mbhm.data.repository.AppRepository
 import com.example.mbhm.model.Announcement
 import com.example.mbhm.model.AttendanceRecord
 import com.example.mbhm.model.Boarder
+import com.example.mbhm.model.LeaveNotice
+import com.example.mbhm.model.LeaveNoticeStatus
 import com.example.mbhm.model.PayStatus
 import com.example.mbhm.model.currentPeriod
 import com.example.mbhm.model.monthAccount
@@ -93,7 +96,10 @@ fun BoarderApp(
     val incidents by appRepository.getAllIncidents().collectAsState(initial = emptyList())
     val sessions by appRepository.getAllAttendanceSessions().collectAsState(initial = emptyList())
     val schedule by appRepository.observeWorshipSchedule().collectAsState(initial = null)
+    val guardianProfile by appRepository.observeGuardianProfile().collectAsState(initial = null)
+    val houseName = guardianProfile?.houseName?.trim().orEmpty()
     val absenceAlerts by appRepository.getAllAbsenceAlerts().collectAsState(initial = emptyList())
+    val leaveNotices by appRepository.observeLeaveNotices().collectAsState(initial = emptyList())
     var toast by remember { mutableStateOf<String?>(null) }
 
     fun go(target: String, screen: String? = null) {
@@ -167,9 +173,11 @@ fun BoarderApp(
                     when (tab) {
                         "home" -> BHome(
                             boarder = b,
+                            houseName = houseName,
                             payments = payments,
                             announcements = announcements,
                             attnRecords = attnRecords,
+                            leaveNotices = leaveNotices.filter { it.boarderId == b.id },
                             onNavigate = ::go,
                             onAnnouncements = { announcementsOpen = true },
                             onSendSos = ::sendSos,
@@ -194,7 +202,14 @@ fun BoarderApp(
                             onSendSos = ::sendSos,
                             showToast = { toast = it }
                         )
-                        "more" -> BMore(b, onBoarderUpdate = ::updateBoarder, onLogout = onLogout, showToast = { toast = it })
+                        "more" -> BMore(
+                            boarder = b,
+                            onBoarderUpdate = ::updateBoarder,
+                            onLogout = onLogout,
+                            showToast = { toast = it },
+                            startScreen = pendingScreen ?: "main",
+                            onStartScreenConsumed = { pendingScreen = null }
+                        )
                     }
                 } else {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -219,9 +234,11 @@ fun BoarderApp(
 @Composable
 fun BHome(
     boarder: Boarder,
+    houseName: String,
     payments: List<PaymentRecord>,
     announcements: List<Announcement>,
     attnRecords: List<AttendanceRecord>,
+    leaveNotices: List<LeaveNotice>,
     onNavigate: (tab: String, screen: String?) -> Unit,
     onAnnouncements: () -> Unit,
     onSendSos: () -> Unit,
@@ -255,6 +272,33 @@ fun BHome(
         java.text.SimpleDateFormat("MMM", java.util.Locale.US).format(java.util.Date()) + " ${boarder.dueDay}"
     }
     var showSosConfirm by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val leavePrefs = remember(context) {
+        context.getSharedPreferences("mbhm_settings", Context.MODE_PRIVATE)
+    }
+    val approvedLeave = remember(leaveNotices) {
+        leaveNotices.firstOrNull { it.status == LeaveNoticeStatus.APPROVED }
+    }
+    val activeLeave = remember(leaveNotices, approvedLeave) {
+        approvedLeave ?: leaveNotices.firstOrNull { it.status == LeaveNoticeStatus.DEPARTED }
+    }
+    var showApprovedLeavePopup by remember { mutableStateOf(false) }
+
+    LaunchedEffect(approvedLeave?.id) {
+        val notice = approvedLeave ?: return@LaunchedEffect
+        val seenKey = "leave_approved_seen_${notice.id}"
+        if (!leavePrefs.getBoolean(seenKey, false)) {
+            showApprovedLeavePopup = true
+        }
+    }
+
+    fun dismissApprovedLeavePopup() {
+        approvedLeave?.let { notice ->
+            leavePrefs.edit().putBoolean("leave_approved_seen_${notice.id}", true).apply()
+        }
+        showApprovedLeavePopup = false
+    }
 
     ScrollBody(
         padding = PaddingValues(horizontal = 16.dp, vertical = 20.dp),
@@ -298,7 +342,7 @@ fun BHome(
                     }
                 }
                 Text(
-                    "Room ${boarder.room} · Casa Marigold",
+                    "Room ${boarder.room}" + if (houseName.isNotBlank()) " · $houseName" else "",
                     color = C.muted,
                     fontSize = 14.sp,
                     modifier = Modifier.padding(top = 4.dp)
@@ -323,6 +367,45 @@ fun BHome(
                         )
                     }
                 }
+            }
+        }
+
+        activeLeave?.let { notice ->
+            val approved = notice.status == LeaveNoticeStatus.APPROVED
+            val accent = if (approved) C.greenText else C.primary
+            Row(
+                Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (approved) C.sageLt else C.primaryLt)
+                    .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+                    .clickable { onNavigate("more", "leave_history") }
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(if (approved) "✅" else "🚪", fontSize = 24.sp)
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        if (approved) "Leave notice approved" else "You are marked as out",
+                        color = accent,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "${notice.destination} · ${notice.leaveDate} at ${notice.expectedDepartureTime}",
+                        color = C.text,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                    Text(
+                        if (approved) "Tap to view or mark your departure" else "Tap to view the leave notice",
+                        color = C.muted,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 3.dp)
+                    )
+                }
+                Text("›", color = accent, fontSize = 20.sp)
             }
         }
 
@@ -642,6 +725,53 @@ Text(
             }
         }
 
+    }
+
+    approvedLeave?.let { notice ->
+        if (showApprovedLeavePopup) {
+            Modal(
+                open = showApprovedLeavePopup,
+                onClose = { dismissApprovedLeavePopup() },
+                title = "Leave Notice Approved"
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("✅", fontSize = 48.sp)
+                    Text(
+                        "Your guardian approved your leave notice.",
+                        color = C.text,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Text(
+                        "${notice.destination} · ${notice.leaveDate} at ${notice.expectedDepartureTime}",
+                        color = C.primary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Text(
+                        "Open the notice to review it or mark when you are leaving.",
+                        color = C.muted,
+                        fontSize = 12.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+                ActionPair(
+                    onCancel = { dismissApprovedLeavePopup() },
+                    onConfirm = {
+                        dismissApprovedLeavePopup()
+                        onNavigate("more", "leave_history")
+                    },
+                    cancelLabel = "Dismiss",
+                    confirmLabel = "View Notice"
+                )
+            }
+        }
     }
 
     if (showSosConfirm) {

@@ -28,11 +28,11 @@ class RemoteSyncClient(
         return "http://$withPort"
     }
 
-    suspend fun status(host: String): ServerStatusResponse? = withContext(Dispatchers.IO) {
+    suspend fun status(host: String, token: String): ServerStatusResponse? = withContext(Dispatchers.IO) {
         val base = baseUrl(host)
-        if (base.isEmpty()) return@withContext null
+        if (base.isEmpty() || token.isBlank()) return@withContext null
         try {
-            val conn = open("$base/api/status", "GET")
+            val conn = open("$base/api/status", "GET", token)
             if (conn.responseCode == 200) {
                 gson.fromJson(readAll(conn), ServerStatusResponse::class.java)
             } else null
@@ -41,11 +41,14 @@ class RemoteSyncClient(
         }
     }
 
-    suspend fun sync(host: String, clientId: String, since: Long): RemoteSyncOutcome =
+    suspend fun sync(host: String, token: String, clientId: String, since: Long): RemoteSyncOutcome =
         withContext(Dispatchers.IO) {
             val base = baseUrl(host)
             if (base.isEmpty()) {
                 return@withContext RemoteSyncOutcome(false, "Enter the server address first")
+            }
+            if (token.isBlank()) {
+                return@withContext RemoteSyncOutcome(false, "Enter the server access token")
             }
 
             val payload = appRepository.exportSyncPayload(NetworkUtils.deviceName())
@@ -53,14 +56,14 @@ class RemoteSyncClient(
 
             val pushed = try {
                 val body = gson.toJson(SyncPushRequest(clientId = clientId, payload = payload))
-                val conn = open("$base/api/push", "POST", hasBody = true)
+                val conn = open("$base/api/push", "POST", token, hasBody = true)
                 OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(body) }
                 if (conn.responseCode == 200) {
                     gson.fromJson(readAll(conn), SyncPushResponse::class.java)
                 } else {
                     return@withContext RemoteSyncOutcome(
                         false,
-                        "Server rejected the upload (HTTP ${conn.responseCode})",
+                        rejectedMessage(conn.responseCode),
                         sent = sent,
                         serverVersion = since
                     )
@@ -75,7 +78,7 @@ class RemoteSyncClient(
             }
 
             val pulled = try {
-                val conn = open("$base/api/pull?since=$since", "GET")
+                val conn = open("$base/api/pull?since=$since", "GET", token)
                 if (conn.responseCode == 200) {
                     gson.fromJson(readAll(conn), RemotePullResponse::class.java)
                 } else null
@@ -112,11 +115,24 @@ class RemoteSyncClient(
             )
         }
 
-    private fun open(url: String, method: String, hasBody: Boolean = false): HttpURLConnection {
+    private fun rejectedMessage(statusCode: Int): String = when (statusCode) {
+        401, 403 -> "Server rejected the access token"
+        413 -> "The sync payload is too large for the server"
+        else -> "Server rejected the upload (HTTP $statusCode)"
+    }
+
+    private fun open(
+        url: String,
+        method: String,
+        token: String,
+        hasBody: Boolean = false
+    ): HttpURLConnection {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.requestMethod = method
         conn.connectTimeout = 4000
         conn.readTimeout = 20000
+        conn.setRequestProperty("Accept", "application/json")
+        conn.setRequestProperty("Authorization", "Bearer $token")
         if (hasBody) {
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")

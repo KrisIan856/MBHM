@@ -1,5 +1,6 @@
 package com.example.mbhm.guardian
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -69,6 +70,8 @@ fun GAnnouncements(
     var toIso by remember { mutableStateOf(isoToday()) }
     var priorityFilter by remember { mutableStateOf("all") }
     val ann = selected
+
+    BackHandler(enabled = view != "list") { view = "list" }
 
     fun send() {
         val newAnn = Announcement(

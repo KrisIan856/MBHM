@@ -1,5 +1,6 @@
 package com.example.mbhm.guardian
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -60,6 +61,13 @@ private val pendingTableColumns = listOf(
     TableColumn("Status", 1.0f, end = true)
 )
 
+private val historySummaryColumns = listOf(
+    TableColumn("Boarder", 1.55f),
+    TableColumn("Present", 0.6f, end = true),
+    TableColumn("Absent", 0.55f, end = true),
+    TableColumn("Rate", 0.7f, end = true)
+)
+
 @Composable
 fun GAttendance(
     boarders: List<Boarder>,
@@ -79,6 +87,11 @@ fun GAttendance(
     var session by remember { mutableStateOf("morning") }
     var scanSheet by remember { mutableStateOf(false) }
     var lastScanned by remember { mutableStateOf<String?>(null) }
+
+    BackHandler(enabled = screen != "main") {
+        screen = "main"
+        screenData = null
+    }
 
     fun openBoarderRecords(b: Boarder) {
         screen = "individual"
@@ -131,10 +144,27 @@ if (screen == "individual") {
     val now = rememberNow(10_000L)
     val todaySessions = sessions.filter { it.date == todayLabel }
     val currentSession = todaySessions.find { it.type.name.lowercase() == session }
+    val windowStartLabel = currentSession?.windowStart
+        ?: if (session == "morning") schedule.morningStart else schedule.eveningStart
     val windowEndLabel = currentSession?.windowEnd
         ?: if (session == "morning") schedule.morningEnd else schedule.eveningEnd
     val windowDateLabel = currentSession?.date ?: todayLabel
-    val isWindowLive = windowMillis(windowDateLabel, windowEndLabel)?.let { now < it } ?: true
+    val windowStartMillis = windowMillis(windowDateLabel, windowStartLabel)
+    val windowEndMillis = windowMillis(windowDateLabel, windowEndLabel)
+    val qrDeadlineMillis = windowStartMillis?.let { start ->
+        val validityEnd = start + (currentSession?.qrValidityMins ?: 0) * 60_000L
+        if (validityEnd > start) minOf(validityEnd, windowEndMillis ?: validityEnd) else windowEndMillis
+    }
+    val isWindowLive = windowStartMillis != null &&
+        qrDeadlineMillis != null &&
+        now >= windowStartMillis &&
+        now < qrDeadlineMillis
+    val windowStateLabel = when {
+        windowStartMillis == null || qrDeadlineMillis == null -> "Not configured"
+        now < windowStartMillis -> "Not started"
+        now < qrDeadlineMillis -> "Live"
+        else -> "Ended"
+    }
     val sessionRecords = currentSession?.let { cs -> records.filter { it.sessionId == cs.id } } ?: emptyList()
     val present = sessionRecords.filter { it.status == AttendanceStatus.PRESENT }
     val absent = sessionRecords.filter { it.status == AttendanceStatus.ABSENT }
@@ -157,8 +187,18 @@ val alertStates = remember(boarders, records, absenceAlerts, schedule.absenceThr
                         Modifier.clip(CircleShape)
                             .background(C.primaryLt)
                             .clickable {
-                                scanSheet = true
-                                lastScanned = null
+                                if (!isWindowLive) {
+                                    showToast(
+                                        if (windowStartMillis != null && now < windowStartMillis) {
+                                            "⚠ Check-in has not started yet"
+                                        } else {
+                                            "⚠ Check-in has ended for this session"
+                                        }
+                                    )
+                                } else {
+                                    scanSheet = true
+                                    lastScanned = null
+                                }
                             }
                             .padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
@@ -220,7 +260,7 @@ val alertStates = remember(boarders, records, absenceAlerts, schedule.absenceThr
                         (currentSession?.let { "${it.windowStart}–${it.windowEnd}" }
                             ?: if (session == "morning") "${schedule.morningStart}–${schedule.morningEnd}"
                             else "${schedule.eveningStart}–${schedule.eveningEnd}") +
-                            if (isWindowLive) "  ·  Live" else "  ·  Ended",
+                            "  ·  $windowStateLabel",
                         color = if (isWindowLive) C.greenText else C.muted,
                         fontSize = 12.sp
                     )
@@ -506,9 +546,17 @@ Column(horizontalAlignment = Alignment.End) {
                                     },
                                     {
 Column(horizontalAlignment = Alignment.End) {
+                                val notStarted = windowStartMillis != null && now < windowStartMillis
                                 Text(
-                                    if (isWindowLive) "Not yet scanned" else "Missed",
-                                    color = if (isWindowLive) C.muted else C.danger,
+                                    when {
+                                        isWindowLive -> "Not yet scanned"
+                                        notStarted -> "Not yet due"
+                                        else -> "Missed"
+                                    },
+                                    color = when {
+                                        isWindowLive || notStarted -> C.muted
+                                        else -> C.danger
+                                    },
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     textAlign = TextAlign.End
@@ -569,19 +617,11 @@ Column(horizontalAlignment = Alignment.End) {
                         }
                     }
                 } else {
-                    if (rememberPrefBoolean("g_qr_auto_refresh", true).value) {
-                        Text(
-                            "♻️ QR auto-refreshes for every session — no manual refresh needed",
-                            color = C.muted,
-                            fontSize = 12.sp
-                        )
-                    } else {
-                        Text(
-                            "🔒 QR stays static until you refresh it manually",
-                            color = C.muted,
-                            fontSize = 12.sp
-                        )
-                    }
+                    Text(
+                        "Scans are accepted only between the session start and the configured QR validity deadline.",
+                        color = C.muted,
+                        fontSize = 12.sp
+                    )
                     QRScanner(
                         onScan = { data ->
                             val boarderId = if (data.startsWith("boarder-")) data.substringAfter("boarder-") else null
@@ -590,6 +630,14 @@ Column(horizontalAlignment = Alignment.End) {
                                 showToast("⚠ Unrecognized QR code")
                             } else if (currentSession == null) {
                                 showToast("⚠ No active $session session right now")
+                            } else if (!isWindowLive) {
+                                showToast(
+                                    if (windowStartMillis != null && now < windowStartMillis) {
+                                        "⚠ Check-in for this session has not started"
+                                    } else {
+                                        "⚠ Check-in for this session has ended"
+                                    }
+                                )
                             } else {
                                 val sessId = currentSession.id
                                 val existing = records.find { r -> r.boarderId == boarder.id && r.sessionId == sessId }
@@ -627,7 +675,7 @@ Column(horizontalAlignment = Alignment.End) {
                             withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
                                 append(session)
                             }
-                            append(" session. Each scan is timestamped and logged automatically.")
+                            append(" session only while its check-in window is open. Each scan is timestamped and logged.")
                         },
                         color = C.muted,
                         fontSize = 11.sp
@@ -1021,57 +1069,83 @@ SectionHeader(
                 action = { Text("Newest sessions first", color = C.muted, fontSize = 11.sp) }
             )
 
-boarders.forEach { b ->
-                val mine = sortedRecords.filter { it.boarderId == b.id }
-                val present = mine.count { it.status == AttendanceStatus.PRESENT }
-                val absent = mine.count { it.status == AttendanceStatus.ABSENT }
-                val boarderRate = if (present + absent > 0) (present * 100) / (present + absent) else 0
-                // Whether the most recent session was missed, so the card can warn even
-                // when the overall rate looks acceptable.
-                val missedLatest = latestSessionId?.let { id ->
-                    mine.any { it.sessionId == id && it.status == AttendanceStatus.ABSENT }
-                } ?: false
-                PCard(modifier = Modifier.clickable { onOpenBoarder(b) }) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Avatar(initials = b.initials, color = b.avatarColor)
-                        Column(Modifier.weight(1f)) {
-                            Text(b.name, color = C.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                "$present present · $absent absent · ${mine.size} records",
-                                color = C.muted,
-                                fontSize = 12.sp,
-                                modifier = Modifier.padding(top = 2.dp)
-                            )
-                            if (absent >= 1) {
+TableCard(historySummaryColumns) {
+                boarders.forEachIndexed { index, b ->
+                    val mine = sortedRecords.filter { it.boarderId == b.id }
+                    val present = mine.count { it.status == AttendanceStatus.PRESENT }
+                    val absent = mine.count { it.status == AttendanceStatus.ABSENT }
+                    val boarderRate = if (present + absent > 0) (present * 100) / (present + absent) else 0
+                    // Whether the most recent session was missed, so the row can warn even
+                    // when the overall rate looks acceptable.
+                    val missedLatest = latestSessionId?.let { id ->
+                        mine.any { it.sessionId == id && it.status == AttendanceStatus.ABSENT }
+                    } ?: false
+                    TableRow(
+                        columns = historySummaryColumns,
+                        divider = index > 0,
+                        onClick = { onOpenBoarder(b) },
+                        cells = listOf(
+                            {
+                                Column {
+                                    Text(
+                                        b.name,
+                                        color = C.text,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        "Room ${b.room} · ${mine.size} records",
+                                        color = C.muted,
+                                        fontSize = 10.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(top = 2.dp)
+                                    )
+                                    if (missedLatest) {
+                                        Text(
+                                            "Missed latest",
+                                            color = C.danger,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.padding(top = 2.dp)
+                                        )
+                                    }
+                                }
+                            },
+                            {
                                 Text(
-                                    "Missed latest session",
-                                    color = C.danger,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                )
-                            }
-                        }
-Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Box(
-                                Modifier.clip(RoundedCornerShape(50))
-                                    .background(if (missedLatest) C.dangerLt else if (boarderRate >= 80) C.sageLt else C.warnLt)
-                                    .padding(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    "$boarderRate%",
-                                    color = if (missedLatest) C.danger else if (boarderRate >= 80) C.greenText else C.warn,
+                                    present.toString(),
+                                    color = C.greenText,
                                     fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.SemiBold
                                 )
+                            },
+                            {
+                                Text(
+                                    absent.toString(),
+                                    color = if (absent > 0) C.danger else C.muted,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            },
+                            {
+                                Box(
+                                    Modifier.clip(RoundedCornerShape(50))
+                                        .background(if (missedLatest) C.dangerLt else if (boarderRate >= 80) C.sageLt else C.warnLt)
+                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                ) {
+                                    Text(
+                                        "$boarderRate%",
+                                        color = if (missedLatest) C.danger else if (boarderRate >= 80) C.greenText else C.warn,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
-                            Text("View records ›", color = C.primary, fontSize = 11.sp)
-                        }
-                    }
+                        )
+                    )
                 }
             }
 

@@ -75,6 +75,7 @@ fun GuardianApp(user: com.example.mbhm.data.entity.UserEntity, onLogout: () -> U
     val rooms by appRepository.observeRooms().collectAsState(initial = emptyList())
     val jobs by appRepository.observeJobs().collectAsState(initial = emptyList())
     val guardianProfile by appRepository.observeGuardianProfile().collectAsState(initial = null)
+    val houseName = guardianProfile?.houseName?.trim().orEmpty()
     var toast by remember { mutableStateOf<String?>(null) }
     var securityDeepLink by remember { mutableStateOf<String?>(null) }
     var paymentsBoarder by remember { mutableStateOf<com.example.mbhm.model.Boarder?>(null) }
@@ -82,8 +83,11 @@ fun GuardianApp(user: com.example.mbhm.data.entity.UserEntity, onLogout: () -> U
     var showProfileModal by remember { mutableStateOf(false) }
     var showLeaveNoticesModal by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
+    var moreInitialScreen by remember { mutableStateOf("main") }
     val today = remember { java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.ENGLISH).format(java.util.Date()) }
-    val guardianName = user.displayName?.takeIf { it.isNotBlank() } ?: user.username
+    val guardianName = guardianProfile?.name?.takeIf { it.isNotBlank() }
+        ?: user.displayName?.takeIf { it.isNotBlank() }
+        ?: user.username
     val guardianInitial = guardianName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "G"
 
     val greeting = remember {
@@ -120,6 +124,7 @@ fun GuardianApp(user: com.example.mbhm.data.entity.UserEntity, onLogout: () -> U
 
     val navItems = listOf(
         NavItem("dashboard", "Home", "🏠"),
+        NavItem("boarders", "Boarders", "👥"),
         NavItem("payments", "Payments", "💳"),
         NavItem("attendance", "Attendance", "📅"),
         NavItem("security", "Security", "🛡️"),
@@ -138,13 +143,30 @@ fun GuardianApp(user: com.example.mbhm.data.entity.UserEntity, onLogout: () -> U
                         leaveNotices = leaveNotices,
                         guardianName = guardianName,
                         guardianInitial = guardianInitial,
+                        houseName = houseName,
                         greeting = greeting,
                         onTabChange = { tab = it },
                         onAnnouncements = { tab = "announcements" },
                         onEmergencyContacts = { securityDeepLink = "contacts"; tab = "security" },
                         onProfileClick = { showProfileModal = true },
-                        onBoarderInfo = { securityDeepLink = "boarders"; tab = "security" },
+                        onBoarderInfo = { tab = "boarders" },
                         onLeaveNotices = { showLeaveNoticesModal = true }
+                    )
+                    "boarders" -> GBoarders(
+                        boarders = boarders,
+                        payments = payments,
+                        setBoarders = setBoarders,
+                        rooms = rooms,
+                        jobs = jobs,
+                        onCreateBoarder = { input ->
+                            appRepository.createBoarderAccount(input, guardianProfile)
+                        },
+                        onSetPassword = { idNumber, pwd ->
+                            appRepository.setAccountPassword(idNumber, pwd)
+                        },
+                        onViewPayments = { b -> paymentsBoarder = b; tab = "payments" },
+                        onViewAttendance = { b -> attendanceBoarder = b; tab = "attendance" },
+                        showToast = { toast = it }
                     )
                     "payments" -> billing?.let { b ->
                         GPayments(
@@ -188,19 +210,8 @@ records = attnRecords,
                         setIncidents = setIncidents,
                         maintenance = maintenance,
                         setMaintenance = setMaintenance,
-                        rooms = rooms,
-                        jobs = jobs,
-                        guardianProfile = guardianProfile,
-                        onCreateBoarder = { input ->
-                            appRepository.createBoarderAccount(input, guardianProfile)
-                        },
-                        onSetPassword = { idNumber, pwd ->
-                            appRepository.setAccountPassword(idNumber, pwd)
-                        },
                         deepLink = securityDeepLink,
                         onDeepLinkConsumed = { securityDeepLink = null },
-                        onViewPayments = { b -> paymentsBoarder = b; tab = "payments" },
-                        onViewAttendance = { b -> attendanceBoarder = b; tab = "attendance" },
                         showToast = { toast = it }
                     )
                     "more" -> {
@@ -221,7 +232,9 @@ records = attnRecords,
                                 onSaveRoom = { r -> scope.launch { appRepository.saveRoom(r) } },
                                 onDeleteRoom = { n -> scope.launch { appRepository.deleteRoom(n) } },
                                 onSaveJob = { j -> scope.launch { appRepository.saveJob(j) } },
-                                onDeleteJob = { n -> scope.launch { appRepository.deleteJob(n) } }
+                                onDeleteJob = { n -> scope.launch { appRepository.deleteJob(n) } },
+                                initialScreen = moreInitialScreen,
+                                onInitialScreenConsumed = { moreInitialScreen = "main" }
                             )
                         } else {
                             Placeholder("⚙️", "Loading settings…")
@@ -265,7 +278,11 @@ records = attnRecords,
                 ) {
                     Text("Guardian", color = C.primary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
-                Text("@${user.username} · Casa Marigold", color = C.muted, fontSize = 13.sp)
+                Text(
+                    "@${user.username}" + if (houseName.isNotBlank()) " · $houseName" else "",
+                    color = C.muted,
+                    fontSize = 13.sp
+                )
 
                 HorizontalDivider(color = C.border)
 
@@ -298,13 +315,42 @@ records = attnRecords,
                         )
                         profileInfoRow("Full name", guardianName)
                         profileInfoRow("Username", "@${user.username}")
-                        profileInfoRow("House", "Casa Marigold")
+                        profileInfoRow("House", houseName.ifBlank { "Not set" })
+                        profileInfoRow(
+                            "Address",
+                            guardianProfile?.houseAddress?.takeIf { it.isNotBlank() } ?: "Not set"
+                        )
+                        profileInfoRow(
+                            "Phone",
+                            guardianProfile?.phone?.takeIf { it.isNotBlank() } ?: "Not set"
+                        )
+                        profileInfoRow(
+                            "Email",
+                            guardianProfile?.email?.takeIf { it.isNotBlank() } ?: "Not set"
+                        )
                         HorizontalDivider(color = C.border, modifier = Modifier.padding(vertical = 8.dp))
                         profileInfoRow("Boarders", "${boarders.size} registered")
                         profileInfoRow("Collected this month", "${money(monthPaid)} of ${money(monthDue)}")
                         profileInfoRow("Receipts to review", pendingReceipts.toString())
                         profileInfoRow("Present today", "$presentToday of ${boarders.size}")
                     }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(C.primaryLt)
+                        .clickable {
+                            showProfileModal = false
+                            moreInitialScreen = "profile"
+                            tab = "more"
+                        }
+                        .padding(14.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Edit Profile", color = C.primary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 }
 
                 HorizontalDivider(color = C.border)
@@ -315,6 +361,7 @@ records = attnRecords,
                         .clip(RoundedCornerShape(12.dp))
                         .background(C.dangerLt)
                         .clickable {
+                            showProfileModal = false
                             showLogoutConfirm = true
                         }
                         .padding(14.dp),
@@ -324,6 +371,27 @@ records = attnRecords,
                     Text("Sign Out", color = C.danger, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 }
             }
+        }
+
+        Modal(
+            open = showLogoutConfirm,
+            onClose = { showLogoutConfirm = false },
+            title = "Sign Out"
+        ) {
+            Text(
+                "Are you sure you want to sign out of the guardian account?",
+                color = C.muted,
+                fontSize = 14.sp
+            )
+            ActionPair(
+                onCancel = { showLogoutConfirm = false },
+                onConfirm = {
+                    showLogoutConfirm = false
+                    onLogout()
+                },
+                confirmLabel = "Sign Out",
+                confirmDanger = true
+            )
         }
 
         Modal(
@@ -610,6 +678,7 @@ fun GDashboard(
     leaveNotices: List<LeaveNotice>,
     guardianName: String,
     guardianInitial: String,
+    houseName: String,
     greeting: String,
     onTabChange: (String) -> Unit,
     onAnnouncements: () -> Unit,
@@ -631,6 +700,7 @@ fun GDashboard(
     val partialCollected = sepPay.filter { it.status == PayStatus.PARTIAL }.sumOf { it.amountPaid ?: 0 }
     val collected = fullCollected + partialCollected
     val totalExpected = boarders.sumOf { it.monthlyRate }
+    val guardianSubtitle = if (houseName.isBlank()) guardianName else "$guardianName · $houseName"
 
     ScrollBody(spacing = 20, padding = PaddingValues(horizontal = 16.dp, vertical = 20.dp)) {
         // Top Header with Top-Right Guardian Profile Avatar (Req 2.A)
@@ -642,7 +712,7 @@ fun GDashboard(
             Column {
                 Text("$greeting, 👋", color = C.text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("$guardianName · Casa Marigold", color = C.muted, fontSize = 14.sp)
+                    Text(guardianSubtitle, color = C.muted, fontSize = 14.sp)
                     Box(
                         Modifier.padding(start = 8.dp)
                             .clip(RoundedCornerShape(50))

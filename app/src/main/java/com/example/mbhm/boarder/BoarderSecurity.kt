@@ -1,5 +1,6 @@
 package com.example.mbhm.boarder
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -74,6 +75,8 @@ fun BSecurity(
         screen = s
         screenData = d
     }
+
+    BackHandler(enabled = screen != "overview") { nav("overview") }
 
     if (screen == "maintenance") {
         B_Maintenance(
@@ -165,11 +168,11 @@ fun BSecurity(
                 Text("🆘", fontSize = 60.sp)
                 Text(
                     buildAnnotatedString {
-                        append("This will immediately alert ")
+                        append("This records an emergency SOS incident on this device. It is shared with ")
                         withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = C.text)) {
                             append("the guardian")
                         }
-                        append(" of an emergency. Only use in genuine emergencies.")
+                        append(" on the next successful sync. It does not send an immediate message.")
                     },
                     color = C.muted,
                     fontSize = 14.sp,
@@ -182,7 +185,7 @@ fun BSecurity(
                 onConfirm = {
                     sosModal = false
                     onSendSos()
-                    showToast("🆘 SOS alert sent! Guardian has been notified.")
+                    showToast("🆘 SOS recorded — it will be shared on the next successful sync")
                 },
                 confirmLabel = "Send SOS Alert",
                 confirmDanger = true
@@ -324,6 +327,8 @@ private fun B_Maintenance(
     var screen by remember { mutableStateOf("list") }
     var category by remember { mutableStateOf(MaintCategory.PLUMBING) }
     var description by remember { mutableStateOf("") }
+
+    BackHandler(enabled = screen != "list") { screen = "list" }
 
     val myReports = maintenance.filter { m -> m.boarderId == boarder.id }
 

@@ -153,6 +153,9 @@ interface AttendanceRecordDao {
     @Query("SELECT * FROM attendance_records WHERE boarderId = :boarderId AND sessionId = :sessionId")
     suspend fun getByBoarderAndSession(boarderId: String, sessionId: String): AttendanceRecordEntity?
 
+    @Query("UPDATE attendance_records SET overrideReason = :reason WHERE sessionId = :sessionId AND id LIKE 'auto-%'")
+    suspend fun updateAutoAbsenceReason(sessionId: String, reason: String)
+
     @Query("SELECT * FROM attendance_records ORDER BY sessionId DESC")
     fun getAll(): Flow<List<AttendanceRecordEntity>>
 

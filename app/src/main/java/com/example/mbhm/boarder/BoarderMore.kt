@@ -1,6 +1,7 @@
 package com.example.mbhm.boarder
 
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,10 +19,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,7 +42,6 @@ import androidx.compose.ui.unit.sp
 import com.example.mbhm.data.repository.AppRepository
 import com.example.mbhm.model.Boarder
 import com.example.mbhm.model.EmergencyContact
-import com.example.mbhm.model.GuardianContact
 import com.example.mbhm.model.LeaveNotice
 import com.example.mbhm.model.LeaveNoticeStatus
 import com.example.mbhm.ui.components.ActionPair
@@ -69,12 +69,22 @@ fun BMore(
     boarder: Boarder,
     onBoarderUpdate: (Boarder) -> Unit,
     onLogout: () -> Unit,
-    showToast: (String) -> Unit
+    showToast: (String) -> Unit,
+    startScreen: String = "main",
+    onStartScreenConsumed: () -> Unit = {}
 ) {
 
     var currentBoarder by remember { mutableStateOf(boarder) }
     var screen by remember { mutableStateOf("main") }
     var showLogoutDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(startScreen) {
+        if (startScreen != "main") {
+            screen = startScreen
+            onStartScreenConsumed()
+        }
+    }
+    BackHandler(enabled = screen != "main") { screen = "main" }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val appRepository = remember(context) { AppRepository.getInstance(context) }
@@ -89,10 +99,6 @@ fun BMore(
     var editEmSecPhone by remember { mutableStateOf(currentBoarder.emergencyContact.secondaryPhone ?: "") }
     var editEmAddress by remember { mutableStateOf(currentBoarder.emergencyContact.address ?: "") }
 
-    var editGName by remember { mutableStateOf(currentBoarder.guardianContact.name) }
-    var editGPhone by remember { mutableStateOf(currentBoarder.guardianContact.phone) }
-    var editGAltPhone by remember { mutableStateOf(currentBoarder.guardianContact.altPhone ?: "") }
-    var editGAddress by remember { mutableStateOf(currentBoarder.guardianContact.address ?: "") }
     var contactsError by remember { mutableStateOf<String?>(null) }
 
 
@@ -113,11 +119,12 @@ fun BMore(
     var leaveFormError by remember { mutableStateOf<String?>(null) }
 
 
-    // Edit Emergency & Guardian Contacts Modal (hoisted so it opens from any screen)
+    // Boarders may maintain their emergency contact, but the guardian profile is
+    // deliberately read-only here. Only the guardian can edit their own contact.
     Modal(
         open = showEditContactsModal,
         onClose = { showEditContactsModal = false },
-        title = "Edit Contact Information"
+        title = "Edit Emergency Contact"
     ) {
 
         Text("EMERGENCY CONTACT", color = C.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -126,15 +133,11 @@ fun BMore(
         Input(label = "Secondary Number (optional)", value = editEmSecPhone, onChange = { editEmSecPhone = it }, keyboardType = KeyboardType.Phone)
         Input(label = "Address (optional)", value = editEmAddress, onChange = { editEmAddress = it })
 
-        Spacer(Modifier.height(8.dp))
-        HorizontalDivider(color = C.border)
-        Spacer(Modifier.height(8.dp))
-
-        Text("GUARDIAN CONTACT", color = C.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        Input(label = "Guardian Full Name", value = editGName, onChange = { editGName = it })
-        Input(label = "Guardian Contact Number", value = editGPhone, onChange = { editGPhone = it }, keyboardType = KeyboardType.Phone)
-        Input(label = "Alternative Number (optional)", value = editGAltPhone, onChange = { editGAltPhone = it }, keyboardType = KeyboardType.Phone)
-        Input(label = "Guardian Address (optional)", value = editGAddress, onChange = { editGAddress = it })
+        Text(
+            "Guardian contact details are managed by your guardian and cannot be edited here.",
+            color = C.muted,
+            fontSize = 11.sp
+        )
 
         contactsError?.let { err ->
             Text(err, color = C.danger, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -148,10 +151,6 @@ fun BMore(
                     contactsError = "Please enter Emergency Contact Name and Number"
                     return@ActionPair
                 }
-                if (editGName.isBlank() || editGPhone.isBlank()) {
-                    contactsError = "Please enter Guardian Name and Number"
-                    return@ActionPair
-                }
                 contactsError = null
                 val updated = currentBoarder.copy(
                     emergencyContact = EmergencyContact(
@@ -159,20 +158,14 @@ fun BMore(
                         phone = editEmPhone.trim(),
                         secondaryPhone = editEmSecPhone.trim().ifEmpty { null },
                         address = editEmAddress.trim().ifEmpty { null }
-                    ),
-                    guardianContact = GuardianContact(
-                        name = editGName.trim(),
-                        phone = editGPhone.trim(),
-                        altPhone = editGAltPhone.trim().ifEmpty { null },
-                        address = editGAddress.trim().ifEmpty { null }
                     )
                 )
                 currentBoarder = updated
                 onBoarderUpdate(updated)
                 showEditContactsModal = false
-                showToast("Emergency & Guardian contact updated")
+                showToast("Emergency contact updated")
             },
-            confirmLabel = "Save Contacts"
+            confirmLabel = "Save Contact"
         )
 
     }
@@ -378,40 +371,14 @@ fun BMore(
             }
 
 
-            // Contact Information Section (with working edit button)
+            // Contact Information Section
             PCard {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "Contact Information",
-                        color = C.text,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        "✏ Edit",
-                        color = C.primary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clickable {
-                            // Pre-fill the edit modal with all contact data
-                            editEmName = currentBoarder.emergencyContact.name
-                            editEmPhone = currentBoarder.emergencyContact.phone
-                            editEmSecPhone = currentBoarder.emergencyContact.secondaryPhone ?: ""
-                            editEmAddress = currentBoarder.emergencyContact.address ?: ""
-
-                            editGName = currentBoarder.guardianContact.name
-                            editGPhone = currentBoarder.guardianContact.phone
-                            editGAltPhone = currentBoarder.guardianContact.altPhone ?: ""
-                            editGAddress = currentBoarder.guardianContact.address ?: ""
-                            contactsError = null
-                            showEditContactsModal = true
-                        }
-                    )
-                }
+                Text(
+                    "Contact Information",
+                    color = C.text,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
                 listOf(
                     "Phone" to currentBoarder.phone,
                     "Email" to currentBoarder.email,
@@ -447,7 +414,7 @@ fun BMore(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        "✓ Edit",
+                        "✏ Edit",
                         color = C.primary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
@@ -456,11 +423,6 @@ fun BMore(
                             editEmPhone = currentBoarder.emergencyContact.phone
                             editEmSecPhone = currentBoarder.emergencyContact.secondaryPhone ?: ""
                             editEmAddress = currentBoarder.emergencyContact.address ?: ""
-
-                            editGName = currentBoarder.guardianContact.name
-                            editGPhone = currentBoarder.guardianContact.phone
-                            editGAltPhone = currentBoarder.guardianContact.altPhone ?: ""
-                            editGAddress = currentBoarder.guardianContact.address ?: ""
                             contactsError = null
                             showEditContactsModal = true
                         }
@@ -490,7 +452,8 @@ fun BMore(
             }
 
 
-            // Guardian Contact Section
+            // Guardian Contact Section. This mirrors the guardian-managed profile and
+            // is intentionally read-only in the boarder app.
             PCard {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -504,32 +467,21 @@ fun BMore(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        "✓ Edit",
-                        color = C.primary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clickable {
-                            editEmName = currentBoarder.emergencyContact.name
-                            editEmPhone = currentBoarder.emergencyContact.phone
-                            editEmSecPhone = currentBoarder.emergencyContact.secondaryPhone ?: ""
-                            editEmAddress = currentBoarder.emergencyContact.address ?: ""
-
-                            editGName = currentBoarder.guardianContact.name
-                            editGPhone = currentBoarder.guardianContact.phone
-                            editGAltPhone = currentBoarder.guardianContact.altPhone ?: ""
-                            editGAddress = currentBoarder.guardianContact.address ?: ""
-                            contactsError = null
-                            showEditContactsModal = true
-                        }
+                        "Managed by guardian",
+                        color = C.muted,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
 
                 val gc = currentBoarder.guardianContact
+                val gp = guardianProfile
                 listOf(
-                    "Guardian Name" to gc.name,
-                    "Contact Number" to gc.phone,
-                    "Alternative Number" to (gc.altPhone ?: "N/A"),
-                    "Guardian Address" to (gc.address ?: "N/A")
+                    "Guardian Name" to (gp?.name?.takeIf { it.isNotBlank() } ?: gc.name.ifBlank { "—" }),
+                    "Contact Number" to (gp?.phone?.takeIf { it.isNotBlank() } ?: gc.phone.ifBlank { "—" }),
+                    "Email" to (gp?.email?.takeIf { it.isNotBlank() } ?: "N/A"),
+                    "House" to (gp?.houseName?.takeIf { it.isNotBlank() } ?: "N/A"),
+                    "Guardian Address" to (gp?.houseAddress?.takeIf { it.isNotBlank() } ?: gc.address ?: "N/A")
                 ).forEach { (label, value) ->
                     Row(
                         Modifier.fillMaxWidth().padding(top = 10.dp),
@@ -556,7 +508,8 @@ fun BMore(
         DeviceSyncScreen(
             appRepository = appRepository,
             onBack = { screen = "main" },
-            showToast = showToast
+            showToast = showToast,
+            allowHosting = false
         )
         return
     }

@@ -1,6 +1,7 @@
 package com.example.mbhm.guardian
 
 import android.app.DatePickerDialog
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -70,6 +71,7 @@ import com.example.mbhm.ui.components.PayChip
 import com.example.mbhm.ui.components.PayPeriodPager
 import com.example.mbhm.ui.components.PrimaryButton
 import com.example.mbhm.ui.components.ReceiptChip
+import com.example.mbhm.ui.components.ReceiptImage
 import com.example.mbhm.ui.components.Screen
 import com.example.mbhm.ui.components.ScrollBody
 import com.example.mbhm.ui.components.SectionHeader
@@ -524,6 +526,8 @@ fun GPayments(
 
     fun back() = nav("list")
 
+    BackHandler(enabled = screen != "list") { back() }
+
     LaunchedEffect(deepLinkBoarder) {
         val b = deepLinkBoarder ?: return@LaunchedEffect
         nav("detail", b)
@@ -826,7 +830,13 @@ private fun GPay_Detail(
                 } else p
             }
         )
-        showToast(if (status == ReceiptStatus.VERIFIED) "✓ Receipt verified" else "Receipt rejected")
+        showToast(
+            if (status == ReceiptStatus.VERIFIED) {
+                "✓ Receipt verified — payment now counts toward the balance"
+            } else {
+                "Receipt rejected — payment is not counted"
+            }
+        )
         rejModal = false
     }
 
@@ -1045,6 +1055,8 @@ private fun GPay_Detail(
             }
 
             val recFileName = sepRec?.receiptFileName
+            val receiptFileAvailable = sepRec?.receiptPath
+                ?.let { path -> java.io.File(path).isFile } == true
             if (sepRec != null && recFileName != null) {
                 val isPending = sepRec.receiptStatus == ReceiptStatus.PENDING_REVIEW
                 PCard(borderColor = if (isPending) C.warn.copy(alpha = 0.5f) else C.border) {
@@ -1067,7 +1079,27 @@ private fun GPay_Detail(
                         ) {
                             Text("🧾", fontSize = 20.sp)
                             Text(recFileName, color = C.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                            Text("View", color = C.muted, fontSize = 12.sp)
+                            Text(
+                                if (receiptFileAvailable) "Available" else "Filename only",
+                                color = C.muted,
+                                fontSize = 12.sp
+                            )
+                        }
+                        ReceiptImage(
+                            path = sepRec.receiptPath,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .border(1.dp, C.border, RoundedCornerShape(10.dp))
+                        )
+                        if (sepRec.receiptPath != null && !receiptFileAvailable) {
+                            Text(
+                                "The image file is stored on the device that submitted it; only its path was synced.",
+                                color = C.muted,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
+                            )
                         }
                         if (isPending) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1385,9 +1417,10 @@ private fun GPay_Cash(
                 else -> PayMethod.ONLINE
             },
             status = if (isPartial) PayStatus.PARTIAL else PayStatus.PAID,
-            receiptStatus = existing?.receiptStatus,
+            receiptStatus = ReceiptStatus.VERIFIED,
             receiptFileName = existing?.receiptFileName,
-            rejectionReason = existing?.rejectionReason,
+            receiptPath = existing?.receiptPath,
+            rejectionReason = null,
             recordedBy = RecordedBy.GUARDIAN,
             verifiedBy = "Guardian",
             verifiedAt = "$payDate · recorded",

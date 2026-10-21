@@ -15,4 +15,5 @@
 local.properties
 /server/mbhm_server.db
 /server/mbhm_server.db-*
+/server/.sync-token
 /server/node_modules

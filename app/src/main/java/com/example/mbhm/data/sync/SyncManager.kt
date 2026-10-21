@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 data class SyncState(
     val host: String = "",
     val autoSync: Boolean = true,
+    val hasToken: Boolean = false,
     val connected: Boolean? = null,
     val busy: Boolean = false,
     val lastSyncAt: Long? = null,
@@ -28,6 +29,7 @@ data class SyncState(
 class SyncManager private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val tokenStore = SecureTokenStore(appContext)
     private val repository = AppRepository.getInstance(appContext)
     private val client = RemoteSyncClient(repository)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -37,7 +39,8 @@ class SyncManager private constructor(context: Context) {
     private val _state = MutableStateFlow(
         SyncState(
             host = prefs.getString(KEY_HOST, "") ?: "",
-            autoSync = prefs.getBoolean(KEY_AUTO, true)
+            autoSync = prefs.getBoolean(KEY_AUTO, true),
+            hasToken = tokenStore.get().isNotBlank()
         )
     )
     val state: StateFlow<SyncState> = _state.asStateFlow()
@@ -53,7 +56,7 @@ class SyncManager private constructor(context: Context) {
             while (isActive) {
                 delay(INTERVAL_MS)
                 val current = _state.value
-                if (current.autoSync && current.host.isNotBlank() && !current.busy) {
+                if (current.autoSync && current.host.isNotBlank() && current.hasToken && !current.busy) {
                     syncNow()
                 }
             }
@@ -64,6 +67,24 @@ class SyncManager private constructor(context: Context) {
         val trimmed = host.trim()
         prefs.edit().putString(KEY_HOST, trimmed).apply()
         _state.value = _state.value.copy(host = trimmed, connected = null)
+    }
+
+    /** Stores the shared-server bearer token encrypted with Android Keystore. */
+    fun setToken(token: String) {
+        val trimmed = token.trim()
+        val saved = runCatching {
+            tokenStore.set(trimmed)
+            trimmed.isEmpty() || tokenStore.get() == trimmed
+        }.getOrDefault(false)
+        _state.value = _state.value.copy(
+            hasToken = saved,
+            connected = null,
+            lastMessage = when {
+                !saved -> "Could not save the token securely"
+                trimmed.isEmpty() -> "Server token cleared"
+                else -> "Server token saved"
+            }
+        )
     }
 
     fun setAutoSync(enabled: Boolean) {
@@ -77,9 +98,22 @@ class SyncManager private constructor(context: Context) {
         }
         _state.value = _state.value.copy(busy = true)
 
+        val host = _state.value.host
+        val token = kotlinx.coroutines.withContext(Dispatchers.IO) { tokenStore.get() }
+        if (host.isBlank()) {
+            _state.value = _state.value.copy(busy = false, connected = false, lastMessage = "Enter the server address first")
+            syncing.set(false)
+            return RemoteSyncOutcome(false, "Enter the server address first")
+        }
+        if (token.isBlank()) {
+            _state.value = _state.value.copy(busy = false, connected = false, lastMessage = "Enter the server access token")
+            syncing.set(false)
+            return RemoteSyncOutcome(false, "Enter the server access token")
+        }
+
         val since = prefs.getLong(KEY_SINCE, 0L)
         val outcome = try {
-            client.sync(_state.value.host, clientId, since)
+            client.sync(host, token, clientId, since)
         } finally {
             _state.value = _state.value.copy(busy = false)
             syncing.set(false)

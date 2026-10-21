@@ -30,10 +30,38 @@ import com.example.mbhm.model.HouseRoom
 import com.example.mbhm.ui.components.ActionPair
 import com.example.mbhm.ui.components.C
 import com.example.mbhm.ui.components.Input
+import com.example.mbhm.ui.components.Option
 import com.example.mbhm.ui.components.PCard
 import com.example.mbhm.ui.components.PrimaryButton
 import com.example.mbhm.ui.components.Screen
 import com.example.mbhm.ui.components.SectionHeader
+import com.example.mbhm.ui.components.Select
+
+private val CommonFloors = listOf(
+    "Ground Floor",
+    "1st Floor",
+    "2nd Floor",
+    "3rd Floor",
+    "4th Floor",
+    "5th Floor",
+    "6th Floor",
+    "7th Floor",
+    "8th Floor",
+    "9th Floor",
+    "10th Floor"
+)
+
+/**
+ * Floor choices shown in the room form. Common floors are always available and
+ * any floor already used by a room is kept so older/custom values remain valid.
+ */
+private fun floorOptions(rooms: List<HouseRoom>, current: String = ""): List<Option> {
+    val floors = (CommonFloors + rooms.map { it.floor } + current)
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && it != "—" }
+        .distinct()
+    return floors.map { Option(it, it) }
+}
 
 /**
  * Guardian-only screen for managing the room list (with the maximum boarder
@@ -58,7 +86,7 @@ fun GRooms(
     var editCapacity by remember { mutableStateOf("") }
 
     var newName by remember { mutableStateOf("") }
-    var newFloor by remember { mutableStateOf("") }
+    var newFloor by remember { mutableStateOf("1st Floor") }
     var newCapacity by remember { mutableStateOf("") }
     var roomError by remember { mutableStateOf<String?>(null) }
     var editError by remember { mutableStateOf<String?>(null) }
@@ -110,10 +138,11 @@ fun GRooms(
                             value = editRoomName,
                             onChange = { editRoomName = it }
                         )
-                        Input(
+                        Select(
                             label = "Floor",
                             value = editFloor,
-                            onChange = { editFloor = it }
+                            onChange = { editFloor = it },
+                            options = floorOptions(rooms, editFloor)
                         )
                         Input(
                             label = "Max Capacity (boarders)",
@@ -240,11 +269,11 @@ fun GRooms(
                     onChange = { newName = it },
                     placeholder = "e.g. 105"
                 )
-                Input(
+                Select(
                     label = "Floor",
                     value = newFloor,
                     onChange = { newFloor = it },
-                    placeholder = "e.g. 1st Floor"
+                    options = floorOptions(rooms)
                 )
                 Input(
                     label = "Max Capacity (boarders)",
@@ -269,7 +298,7 @@ fun GRooms(
                             return@PrimaryButton
                         }
                         if (newFloor.isBlank()) {
-                            roomError = "Please enter the floor"
+                            roomError = "Please select a floor"
                             return@PrimaryButton
                         }
                         if (cap == null || cap < 1) {
@@ -278,7 +307,7 @@ fun GRooms(
                         }
                         roomError = null
                         onSaveRoom(HouseRoom(newName.trim(), newFloor.trim(), cap))
-                        newName = ""; newFloor = ""; newCapacity = ""
+                        newName = ""; newFloor = "1st Floor"; newCapacity = ""
                         showToast("Room added")
                     },
                     modifier = Modifier.fillMaxWidth()

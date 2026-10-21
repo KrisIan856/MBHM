@@ -11,17 +11,29 @@ class SessionManager(context: Context) {
         private const val KEY_USERNAME = "logged_in_username"
         private const val KEY_LAST_BACKGROUND_TIME = "last_background_time"
         const val TIMEOUT_MILLIS = 10 * 60 * 1000L // 10 minutes
+
+        /**
+         * Keeps a session alive across configuration changes (rotation) without writing it
+         * to disk when "Remember me" is off. A cold start starts with null again.
+         */
+        @Volatile
+        private var activeUsername: String? = null
     }
 
-    fun saveSession(username: String) {
-        prefs.edit()
-            .putString(KEY_USERNAME, username)
+    fun saveSession(username: String, rememberMe: Boolean = true) {
+        activeUsername = username
+        val editor = prefs.edit()
             .putLong(KEY_LAST_BACKGROUND_TIME, 0L)
-            .apply()
+        if (rememberMe) {
+            editor.putString(KEY_USERNAME, username)
+        } else {
+            editor.remove(KEY_USERNAME)
+        }
+        editor.apply()
     }
 
     fun getLoggedInUsername(): String? {
-        return prefs.getString(KEY_USERNAME, null)
+        return activeUsername ?: prefs.getString(KEY_USERNAME, null)
     }
 
     fun recordBackgroundTime() {
@@ -43,6 +55,7 @@ class SessionManager(context: Context) {
     }
 
     fun clearSession() {
+        activeUsername = null
         prefs.edit().clear().apply()
     }
 }

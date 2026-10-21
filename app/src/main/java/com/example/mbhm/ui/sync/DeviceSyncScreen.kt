@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -49,7 +50,8 @@ private const val PEER_PORT = 8080
 fun DeviceSyncScreen(
     appRepository: AppRepository,
     onBack: () -> Unit,
-    showToast: (String) -> Unit
+    showToast: (String) -> Unit,
+    allowHosting: Boolean = true
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -61,10 +63,21 @@ fun DeviceSyncScreen(
     val localIp = remember { NetworkUtils.getLocalIpAddress(context) }
 
     var hostInput by remember(syncState.host) { mutableStateOf(syncState.host) }
+    var tokenInput by remember { mutableStateOf("") }
     var peerRunning by remember { mutableStateOf(peerServer.isRunning()) }
+    var peerPairingToken by remember { mutableStateOf(peerServer.pairingToken.orEmpty()) }
     var peerHostIp by remember { mutableStateOf("") }
+    var peerTokenInput by remember { mutableStateOf("") }
     var peerStatus by remember { mutableStateOf<String?>(null) }
     var busyPeer by remember { mutableStateOf(false) }
+
+    fun applyServerCredentials() {
+        syncManager.setHost(hostInput)
+        if (tokenInput.isNotBlank()) {
+            syncManager.setToken(tokenInput)
+            tokenInput = ""
+        }
+    }
 
     DisposableEffect(Unit) {
         onDispose { peerServer.stop() }
@@ -88,6 +101,26 @@ fun DeviceSyncScreen(
                     placeholder = "192.168.1.5",
                     keyboardType = KeyboardType.Uri
                 )
+                Input(
+                    label = "Server Access Token",
+                    value = tokenInput,
+                    onChange = { tokenInput = it },
+                    placeholder = if (syncState.hasToken) {
+                        "Token saved — paste a new one to replace it"
+                    } else {
+                        "Paste the token printed by the server"
+                    },
+                    isSecret = true
+                )
+                Text(
+                    if (syncState.hasToken) {
+                        "The access token is stored encrypted on this device."
+                    } else {
+                        "The server prints an access token when it starts. You need it before syncing."
+                    },
+                    color = if (syncState.hasToken) C.greenText else C.muted,
+                    fontSize = 11.sp
+                )
                 Text(
                     "Dashboard on your computer: http://<computer-ip>:$SYNC_SERVER_PORT",
                     color = C.muted,
@@ -99,13 +132,13 @@ fun DeviceSyncScreen(
                         text = "Save Address",
                         modifier = Modifier.weight(1f),
                         onClick = {
-                            syncManager.setHost(hostInput)
+                            applyServerCredentials()
                             scope.launch {
                                 val outcome = syncManager.syncNow()
                                 if (outcome.success) {
                                     showToast("Connected · ${outcome.received} records received")
                                 } else {
-                                    showToast("Saved, but server not reachable")
+                                    showToast(outcome.message)
                                 }
                             }
                         }
@@ -115,7 +148,7 @@ fun DeviceSyncScreen(
                         enabled = !syncState.busy,
                         modifier = Modifier.weight(1f),
                         onClick = {
-                            syncManager.setHost(hostInput)
+                            applyServerCredentials()
                             scope.launch { syncManager.syncNow() }
                         }
                     )
@@ -172,28 +205,69 @@ fun DeviceSyncScreen(
         SectionHeader(title = "Direct Device Sync (no computer)")
         PCard {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                InfoRow(
-                    label = "Sharing on port",
-                    value = if (peerRunning) "On · port $PEER_PORT" else "Off"
-                )
-                PrimaryButton(
-                    text = if (peerRunning) "Stop Sharing" else "Start Sharing",
-                    bg = if (peerRunning) C.dangerLt else C.primary,
-                    textColor = if (peerRunning) C.danger else Color.White,
-                    enabled = !busyPeer,
-                    onClick = {
-                        scope.launch {
-                            busyPeer = true
-                            withContext(Dispatchers.IO) {
-                                if (peerRunning) peerServer.stop() else peerServer.start()
+                if (allowHosting) {
+                    InfoRow(
+                        label = "Sharing on port",
+                        value = if (peerRunning) "On · port $PEER_PORT" else "Off"
+                    )
+                    PrimaryButton(
+                        text = if (peerRunning) "Stop Sharing" else "Start Sharing",
+                        bg = if (peerRunning) C.dangerLt else C.primary,
+                        textColor = if (peerRunning) C.danger else Color.White,
+                        enabled = !busyPeer,
+                        onClick = {
+                            scope.launch {
+                                busyPeer = true
+                                withContext(Dispatchers.IO) {
+                                    if (peerRunning) peerServer.stop() else peerServer.start()
+                                }
+                                peerRunning = peerServer.isRunning()
+                                peerPairingToken = peerServer.pairingToken.orEmpty()
+                                busyPeer = false
+                                showToast(
+                                    if (peerRunning) {
+                                        "Sharing on port $PEER_PORT — share the pairing token below"
+                                    } else {
+                                        "Sharing stopped — pairing token invalidated"
+                                    }
+                                )
                             }
-                            peerRunning = peerServer.isRunning()
-                            busyPeer = false
-                            showToast(if (peerRunning) "Sharing on port $PEER_PORT" else "Sharing stopped")
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (peerRunning && peerPairingToken.isNotBlank()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                "Pairing token",
+                                color = C.muted,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            SelectionContainer {
+                                Text(
+                                    peerPairingToken,
+                                    color = C.text,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Text(
+                                "Share this only with the device you trust. It is invalidated when sharing stops.",
+                                color = C.muted,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
+                            )
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                    }
+                } else {
+                    Text(
+                        "Ask the guardian to start sharing on their device, then enter the host IP and pairing token below.",
+                        color = C.muted,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+                }
 
                 Input(
                     label = "Other Device IP",
@@ -201,6 +275,13 @@ fun DeviceSyncScreen(
                     onChange = { peerHostIp = it },
                     placeholder = "192.168.1.7",
                     keyboardType = KeyboardType.Uri
+                )
+                Input(
+                    label = "Host Pairing Token",
+                    value = peerTokenInput,
+                    onChange = { peerTokenInput = it },
+                    placeholder = "Token shown on the host device",
+                    isSecret = true
                 )
                 PrimaryButton(
                     text = if (busyPeer) "Syncing..." else "Sync With Device",
@@ -211,11 +292,15 @@ fun DeviceSyncScreen(
                             showToast("Enter the other device's IP address")
                             return@PrimaryButton
                         }
+                        if (peerTokenInput.isBlank()) {
+                            showToast("Enter the host's pairing token")
+                            return@PrimaryButton
+                        }
                         scope.launch {
                             busyPeer = true
                             peerStatus = "Syncing with $ip ..."
                             val result = withContext(Dispatchers.IO) {
-                                peerClient.syncWithHost(ip, PEER_PORT)
+                                peerClient.syncWithHost(ip, peerTokenInput.trim(), PEER_PORT)
                             }
                             peerStatus = if (result.success) {
                                 "Direct sync complete — ${result.itemsSynced} records"
@@ -236,8 +321,8 @@ fun DeviceSyncScreen(
                 Text(
                     "1. On your computer, double-click server\\start-server.bat.\n" +
                         "2. Connect both phones to the same Wi-Fi as the computer.\n" +
-                        "3. Enter the computer's IP address above and tap Sync Now.\n" +
-                        "4. Open http://<computer-ip>:$SYNC_SERVER_PORT in a browser to see the shared database.",
+                        "3. Enter the computer's IP and the printed access token above, then tap Sync Now.\n" +
+                        "4. Open http://<computer-ip>:$SYNC_SERVER_PORT in a browser and sign in with username mbhm and the token.",
                     color = C.text,
                     fontSize = 12.sp,
                     lineHeight = 17.sp

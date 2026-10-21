@@ -103,8 +103,8 @@ fun MbhmApp() {
         when (val user = authenticatedUser) {
             null -> AuthScreen(
                 appRepository = appRepository,
-                onLoginSuccess = { loggedInUser ->
-                    sessionManager.saveSession(loggedInUser.username)
+                onLoginSuccess = { loggedInUser, rememberMe ->
+                    sessionManager.saveSession(loggedInUser.username, rememberMe)
                     authenticatedUser = loggedInUser
                 }
             )

@@ -1,5 +1,7 @@
 'use strict';
 
+const crypto = require('node:crypto');
+const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
@@ -7,7 +9,66 @@ const { DatabaseSync } = require('node:sqlite');
 
 const PORT = Number(process.env.PORT || 3000);
 const DB_FILE = process.env.DB_FILE || path.join(__dirname, 'mbhm_server.db');
-const MAX_BODY = 64 * 1024 * 1024;
+const TOKEN_FILE = process.env.TOKEN_FILE || path.join(__dirname, '.sync-token');
+const MAX_BODY = 8 * 1024 * 1024;
+
+function loadOrCreateToken() {
+    const configured = (process.env.SYNC_TOKEN || '').trim();
+    if (configured) return configured;
+
+    try {
+        const saved = fs.readFileSync(TOKEN_FILE, 'utf8').trim();
+        if (saved) return saved;
+    } catch (err) {
+        if (err.code !== 'ENOENT') {
+            console.error(`Cannot read ${TOKEN_FILE}: ${err.message}`);
+        }
+    }
+
+    const generated = crypto.randomBytes(32).toString('base64url');
+    try {
+        fs.writeFileSync(TOKEN_FILE, generated, { encoding: 'utf8', mode: 0o600 });
+    } catch (err) {
+        console.error(`Cannot save ${TOKEN_FILE}: ${err.message}. The token will change on restart.`);
+    }
+    return generated;
+}
+
+const ACCESS_TOKEN = loadOrCreateToken();
+
+function safeEqual(left, right) {
+    const a = Buffer.from(String(left), 'utf8');
+    const b = Buffer.from(String(right), 'utf8');
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+function isAuthorized(req) {
+    const header = String(req.headers.authorization || '');
+    if (header.startsWith('Bearer ')) {
+        return safeEqual(header.slice(7).trim(), ACCESS_TOKEN);
+    }
+    if (header.startsWith('Basic ')) {
+        const decoded = Buffer.from(header.slice(6), 'base64').toString('utf8');
+        const separator = decoded.indexOf(':');
+        if (separator < 0) return false;
+        return decoded.slice(0, separator) === 'mbhm' &&
+            safeEqual(decoded.slice(separator + 1), ACCESS_TOKEN);
+    }
+    return false;
+}
+
+function sendUnauthorized(res) {
+    const body = JSON.stringify({ ok: false, error: 'authentication required' });
+    res.writeHead(401, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': Buffer.byteLength(body),
+        'WWW-Authenticate': 'Basic realm="MBHM Sync", charset="UTF-8"',
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'Connection': 'close'
+    });
+    res.end(body);
+}
 
 const COLLECTIONS = {
     users: { pk: 'username' },
@@ -237,8 +298,11 @@ function renderDashboard() {
     const data = handleExport();
     const sections = [];
 
-    for (const [collection, rows] of Object.entries(data)) {
-        if (!Array.isArray(rows) || rows.length === 0) continue;
+    for (const [collection, rawRows] of Object.entries(data)) {
+        if (!Array.isArray(rawRows) || rawRows.length === 0) continue;
+        const rows = collection === 'users'
+            ? rawRows.map((row) => ({ ...row, passwordHash: '••••••••' }))
+            : rawRows;
         const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
         const head = columns.map((c) => `<th>${escapeHtml(c)}</th>`).join('');
         const body = rows
@@ -309,9 +373,10 @@ function sendJson(res, statusCode, payload) {
     res.writeHead(statusCode, {
         'Content-Type': 'application/json; charset=utf-8',
         'Content-Length': Buffer.byteLength(body),
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'Referrer-Policy': 'no-referrer',
         'Connection': 'close'
     });
     res.end(body);
@@ -321,6 +386,10 @@ function sendHtml(res, statusCode, html) {
     res.writeHead(statusCode, {
         'Content-Type': 'text/html; charset=utf-8',
         'Content-Length': Buffer.byteLength(html),
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'Referrer-Policy': 'no-referrer',
         'Connection': 'close'
     });
     res.end(html);
@@ -355,13 +424,8 @@ function countPayload(payload) {
 const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
-    if (req.method === 'OPTIONS') {
-        res.writeHead(204, {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Content-Type',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
-        });
-        res.end();
+    if (!isAuthorized(req)) {
+        sendUnauthorized(res);
         return;
     }
 
@@ -398,7 +462,13 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 404, { ok: false, error: 'not found' });
     } catch (err) {
         console.error(`[${new Date().toISOString()}] ${req.method} ${url.pathname} failed: ${err.stack || err.message}`);
-        sendJson(res, 500, { ok: false, error: err.message });
+        if (err.message === 'payload too large') {
+            sendJson(res, 413, { ok: false, error: 'payload too large' });
+        } else if (err instanceof SyntaxError) {
+            sendJson(res, 400, { ok: false, error: 'invalid JSON' });
+        } else {
+            sendJson(res, 500, { ok: false, error: 'request failed' });
+        }
     }
 });
 
@@ -406,6 +476,9 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log('MBHM sync server running');
     console.log(`  database : ${DB_FILE}`);
     console.log(`  dashboard: http://localhost:${PORT}/`);
+    console.log(`  username : mbhm`);
+    console.log(`  token    : ${ACCESS_TOKEN}`);
+    console.log(`  token file: ${TOKEN_FILE}`);
     for (const ip of lanAddresses()) {
         console.log(`  devices  : http://${ip}:${PORT}`);
     }

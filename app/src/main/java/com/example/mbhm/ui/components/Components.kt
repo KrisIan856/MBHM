@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
+import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -28,6 +29,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +41,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -82,6 +86,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -157,6 +163,43 @@ fun android.content.Context.fileNameOf(uri: android.net.Uri): String {
         }
     }
     return name
+}
+
+/** Copies a picked receipt image into app storage so its URI permission cannot expire. */
+fun android.content.Context.storeReceiptFile(
+    uri: android.net.Uri,
+    recordId: String
+): String? = runCatching {
+    val directory = java.io.File(filesDir, "receipts").apply { mkdirs() }
+    val safeId = recordId.replace(Regex("[^A-Za-z0-9_-]"), "_").take(48)
+    val extension = when (contentResolver.getType(uri)) {
+        "image/png" -> "png"
+        "image/webp" -> "webp"
+        else -> "jpg"
+    }
+    val file = java.io.File(directory, "${safeId}_${System.currentTimeMillis()}.$extension")
+    val input = contentResolver.openInputStream(uri) ?: return@runCatching null
+    input.use { source ->
+        file.outputStream().use { sink -> source.copyTo(sink) }
+    }
+    file.absolutePath
+}.getOrNull()
+
+/** Shows a saved receipt only when it still exists on this device (sync copies paths, not files). */
+@Composable
+fun ReceiptImage(path: String?, modifier: Modifier = Modifier) {
+    if (path.isNullOrBlank() || !java.io.File(path).isFile) return
+    AndroidView(
+        factory = { ctx ->
+            android.widget.ImageView(ctx).apply {
+                scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+            }
+        },
+        update = { image ->
+            image.setImageURI(android.net.Uri.fromFile(java.io.File(path)))
+        },
+        modifier = modifier
+    )
 }
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
@@ -700,9 +743,11 @@ fun NavBar(
                 }
                 Text(
                     item.label,
-                    fontSize = 10.sp,
+                    fontSize = if (items.size > 5) 9.sp else 10.sp,
                     fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
-                    color = if (isActive) C.primary else C.navIdle
+                    color = if (isActive) C.primary else C.navIdle,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -731,6 +776,7 @@ fun BottomSheet(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0x660F172A))
+                .imePadding()
                 .pointerInput(Unit) { detectTapGestures { onClose() } },
             contentAlignment = Alignment.BottomCenter
         ) {
@@ -816,6 +862,7 @@ fun Modal(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0x660F172A))
+                .imePadding()
                 .pointerInput(Unit) { detectTapGestures { onClose() } },
             contentAlignment = Alignment.Center
         ) {
@@ -864,6 +911,10 @@ private fun TransparentDialogWindow() {
     SideEffect {
         val window = (view.parent as? DialogWindowProvider)?.window ?: return@SideEffect
         window.setDimAmount(0f)
+        // Resize the dialog when the IME opens so text fields near the bottom of a
+        // scrollable form (for example the leave-notice destination field) stay visible.
+        @Suppress("DEPRECATION")
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
     }
 }
 
@@ -887,12 +938,20 @@ fun Input(
     label: String? = null,
     placeholder: String? = null,
     keyboardType: KeyboardType = KeyboardType.Text,
+    isSecret: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Column(modifier) {
         if (label != null) FieldLabel(label)
         val interactionSource = remember { MutableInteractionSource() }
         val focused by interactionSource.collectIsFocusedAsState()
+        val bringIntoViewRequester = remember { BringIntoViewRequester() }
+        LaunchedEffect(focused) {
+            if (focused) {
+                delay(250)
+                bringIntoViewRequester.bringIntoView()
+            }
+        }
         BasicTextField(
             value = value,
             onValueChange = onChange,
@@ -901,8 +960,14 @@ fun Input(
             singleLine = true,
             interactionSource = interactionSource,
             keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+            visualTransformation = if (isSecret) {
+                PasswordVisualTransformation()
+            } else {
+                VisualTransformation.None
+            },
             modifier = Modifier
                 .fillMaxWidth()
+                .bringIntoViewRequester(bringIntoViewRequester)
                 .clip(RoundedCornerShape(12.dp))
                 .background(C.card)
                 .border(1.dp, if (focused) C.primary else C.border, RoundedCornerShape(12.dp))
@@ -930,6 +995,13 @@ fun Textarea(
         if (label != null) FieldLabel(label)
         val interactionSource = remember { MutableInteractionSource() }
         val focused by interactionSource.collectIsFocusedAsState()
+        val bringIntoViewRequester = remember { BringIntoViewRequester() }
+        LaunchedEffect(focused) {
+            if (focused) {
+                delay(250)
+                bringIntoViewRequester.bringIntoView()
+            }
+        }
         BasicTextField(
             value = value,
             onValueChange = onChange,
@@ -938,6 +1010,7 @@ fun Textarea(
             interactionSource = interactionSource,
             modifier = Modifier
                 .fillMaxWidth()
+                .bringIntoViewRequester(bringIntoViewRequester)
                 .heightIn(min = (rows * 22).dp)
                 .clip(RoundedCornerShape(12.dp))
                 .background(C.card)

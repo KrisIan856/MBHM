@@ -73,7 +73,7 @@ private fun roleLabel(role: Role): String = when (role) {
 @Composable
 fun AuthScreen(
     appRepository: AppRepository,
-    onLoginSuccess: (UserEntity) -> Unit
+    onLoginSuccess: (UserEntity, Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -99,7 +99,7 @@ fun AuthScreen(
             AuthMode.LOGIN -> LoginScreenContent(
                 error = errorMsg,
                 info = infoMsg,
-                onLogin = { username, password, accountType ->
+                onLogin = { username, password, accountType, rememberMe ->
                     errorMsg = null
                     infoMsg = null
                     if (username.isBlank() || password.isBlank()) {
@@ -129,7 +129,7 @@ fun AuthScreen(
                                 errorMsg = "This account is a ${roleLabel(user.role)} account. " +
                                     "Select ${roleLabel(selectedType)} above and try again."
                             }
-                            else -> onLoginSuccess(user)
+                            else -> onLoginSuccess(user, rememberMe)
                         }
                     }
                 },
@@ -157,9 +157,9 @@ fun AuthScreen(
                     scope.launch {
                         val newUser = appRepository.registerUser(username, password, guardianDetails)
                         if (newUser != null) {
-                            onLoginSuccess(newUser)
+                            onLoginSuccess(newUser, true)
                         } else {
-                            errorMsg = "Username is already taken"
+                            errorMsg = "Username is already taken or the password does not meet the requirements"
                         }
                     }
                 }
@@ -179,7 +179,7 @@ fun AuthScreen(
 private fun LoginScreenContent(
     error: String?,
     info: String?,
-    onLogin: (String, String, Role?) -> Unit,
+    onLogin: (String, String, Role?, Boolean) -> Unit,
     onRegisterClick: () -> Unit,
     onForgotClick: () -> Unit
 ) {
@@ -367,7 +367,7 @@ private fun LoginScreenContent(
                         .background(
                             Brush.linearGradient(listOf(C.primary, Color(0xFF3730A3)))
                         )
-                        .clickable { onLogin(username, password, accountType) },
+                        .clickable { onLogin(username, password, accountType, rememberMe) },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(

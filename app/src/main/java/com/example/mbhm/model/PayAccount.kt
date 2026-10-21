@@ -53,12 +53,19 @@ fun paymentPeriods(
 }
 
 /**
- * Cash actually collected on a record. A PAID record may leave [PaymentRecord.amountPaid]
- * null, in which case the full amount was paid.
+ * Cash actually collected on a record. Guardian-recorded payments are confirmed by the
+ * guardian at entry. Boarder-submitted payments only count once the guardian verifies the
+ * attached proof, so a pending or rejected receipt cannot reduce the outstanding balance.
+ * A PAID record may leave [PaymentRecord.amountPaid] null, in which case the full amount
+ * was paid.
  */
-fun PaymentRecord.paidAmount(): Int = when (status) {
-    PayStatus.PAID -> amountPaid ?: amount
-    else -> amountPaid ?: 0
+fun PaymentRecord.paidAmount(): Int {
+    val confirmed = recordedBy == RecordedBy.GUARDIAN || receiptStatus == ReceiptStatus.VERIFIED
+    if (!confirmed) return 0
+    return when (status) {
+        PayStatus.PAID -> amountPaid ?: amount
+        else -> amountPaid ?: 0
+    }
 }
 
 /** [PaymentRecord.paidAmount] for a possibly absent record. */

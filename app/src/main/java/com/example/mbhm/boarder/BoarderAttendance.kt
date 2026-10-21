@@ -1,5 +1,6 @@
 package com.example.mbhm.boarder
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -68,6 +69,8 @@ fun BAttendance(
     var screen by remember(startScreen) { mutableStateOf(startScreen) }
     var activeSession by remember { mutableStateOf("morning") }
 
+    BackHandler(enabled = screen != "main") { screen = "main" }
+
     val showCalendarColors = rememberPrefBoolean("notif_calendar_colors", true)
     val absenceAlertsOn = rememberPrefBoolean("notif_absence_alerts", true)
     val sessionReminders = rememberPrefBoolean("notif_attendance_reminders", true)
@@ -99,10 +102,28 @@ fun BAttendance(
     val todayEvening = eveningSession?.let { s -> myRecords.find { r -> r.sessionId == s.id } }
 
     val now = rememberNow(10_000L)
+    val morningStart = morningSession?.let { windowMillis(it.date, it.windowStart) }
     val morningEnd = morningSession?.let { windowMillis(it.date, it.windowEnd) }
+    val eveningStart = eveningSession?.let { windowMillis(it.date, it.windowStart) }
     val eveningEnd = eveningSession?.let { windowMillis(it.date, it.windowEnd) }
-    val isMorningOpen = morningSession != null && (morningEnd?.let { now < it } ?: true)
-    val isEveningOpen = eveningSession != null && (eveningEnd?.let { now < it } ?: true)
+    val morningDeadline = if (morningSession != null && morningStart != null && morningEnd != null) {
+        minOf(morningEnd, morningStart + morningSession.qrValidityMins * 60_000L)
+    } else null
+    val eveningDeadline = if (eveningSession != null && eveningStart != null && eveningEnd != null) {
+        minOf(eveningEnd, eveningStart + eveningSession.qrValidityMins * 60_000L)
+    } else null
+    val isMorningOpen = morningStart != null && morningDeadline != null &&
+        now >= morningStart && now < morningDeadline
+    val isEveningOpen = eveningStart != null && eveningDeadline != null &&
+        now >= eveningStart && now < eveningDeadline
+    val preferredQrSession = when {
+        isMorningOpen -> "morning"
+        isEveningOpen -> "evening"
+        morningStart != null && now < morningStart -> "morning"
+        eveningStart != null && now < eveningStart -> "evening"
+        eveningSession != null -> "evening"
+        else -> "morning"
+    }
 
     val calendar = remember { java.util.Calendar.getInstance() }
     val calYear = calendar.get(java.util.Calendar.YEAR)
@@ -176,12 +197,31 @@ fun BAttendance(
                         modifier = Modifier.padding(top = 2.dp)
                     )
                     if (activeS != null) {
-                        val qrEndMillis = windowMillis(activeS.date, activeS.windowEnd)
-                        val qrLive = qrEndMillis?.let { now < it } ?: true
+                        val qrStartMillis = windowMillis(activeS.date, activeS.windowStart)
+                        val qrWindowEndMillis = windowMillis(activeS.date, activeS.windowEnd)
+                        val qrDeadlineMillis = if (qrStartMillis != null && qrWindowEndMillis != null) {
+                            minOf(qrWindowEndMillis, qrStartMillis + activeS.qrValidityMins * 60_000L)
+                        } else qrWindowEndMillis
+                        val qrTimeFmt = SimpleDateFormat("h:mm a", Locale.ENGLISH)
+                        val qrLive = qrStartMillis != null && qrDeadlineMillis != null &&
+                            now >= qrStartMillis && now < qrDeadlineMillis
+                        val qrStatus = when {
+                            qrStartMillis == null || qrDeadlineMillis == null ->
+                                "Check-in time unavailable"
+                            now < qrStartMillis ->
+                                "● Check-in opens at ${qrTimeFmt.format(Date(qrStartMillis))}"
+                            qrLive ->
+                                "● Check-in open · closes at ${qrTimeFmt.format(Date(qrDeadlineMillis))}"
+                            else ->
+                                "✕ Check-in closed at ${qrTimeFmt.format(Date(qrDeadlineMillis))}"
+                        }
                         Text(
-                            if (qrLive) "● Check-in open · closes at ${activeS.windowEnd}"
-                            else "✕ Check-in closed at ${activeS.windowEnd}",
-                            color = if (qrLive) C.greenText else C.danger,
+                            qrStatus,
+                            color = when {
+                                qrLive -> C.greenText
+                                qrStartMillis != null && now < qrStartMillis -> C.muted
+                                else -> C.danger
+                            },
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.padding(top = 4.dp)
@@ -323,7 +363,7 @@ fun BAttendance(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        "Your guardian scans this to mark you present",
+                        "Your guardian scans this to mark you present. It is accepted only during an active check-in window.",
                         color = C.primary,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 2.dp)
@@ -358,12 +398,12 @@ fun BAttendance(
                                 .padding(top = 8.dp)
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(C.primary)
-                                .clickable { openQR("morning") }
+                                .clickable { openQR(preferredQrSession) }
                                 .padding(vertical = 10.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "📱 Show Full QR",
+                                if (isMorningOpen || isEveningOpen) "📱 Show Full QR" else "📱 View QR / Window Status",
                                 color = Color.White,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.SemiBold
@@ -409,7 +449,7 @@ fun BAttendance(
                         )
                         if (todayMorning != null && todayMorning.status == AttendanceStatus.PRESENT) {
                             Text(
-                                "✅ ${todayMorning.checkInTime}",
+                                "✅ ${todayMorning.checkInTime ?: "Present"}",
                                 color = C.greenText,
                                 fontSize = 12.sp,
                                 modifier = Modifier.padding(top = 4.dp)
@@ -444,9 +484,13 @@ fun BAttendance(
                                 )
                             }
                         } else {
+                            val notStarted = morningStart != null && now < morningStart
                             Text(
-                                if (morningSession == null) "Session not scheduled today"
-                                else "Check-in closed",
+                                when {
+                                    morningSession == null -> "Session not scheduled today"
+                                    notStarted -> "Check-in opens at ${morningSession?.windowStart ?: "the scheduled time"}"
+                                    else -> "Check-in closed"
+                                },
                                 color = C.muted,
                                 fontSize = 12.sp,
                                 modifier = Modifier.padding(top = 4.dp)
@@ -486,7 +530,7 @@ fun BAttendance(
                         )
                         if (todayEvening != null && todayEvening.status == AttendanceStatus.PRESENT) {
                             Text(
-                                "✅ ${todayEvening.checkInTime}",
+                                "✅ ${todayEvening.checkInTime ?: "Present"}",
                                 color = C.greenText,
                                 fontSize = 12.sp,
                                 modifier = Modifier.padding(top = 4.dp)
@@ -521,9 +565,13 @@ fun BAttendance(
                                 )
                             }
                         } else {
+                            val notStarted = eveningStart != null && now < eveningStart
                             Text(
-                                if (eveningSession == null) "Session not scheduled today"
-                                else "Check-in closed",
+                                when {
+                                    eveningSession == null -> "Session not scheduled today"
+                                    notStarted -> "Check-in opens at ${eveningSession?.windowStart ?: "the scheduled time"}"
+                                    else -> "Check-in closed"
+                                },
                                 color = C.muted,
                                 fontSize = 12.sp,
                                 modifier = Modifier.padding(top = 4.dp)

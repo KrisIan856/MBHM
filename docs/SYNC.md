@@ -86,7 +86,7 @@ The server validates with a timing-safe comparison. Unknown or missing credentia
 
 ### Auto-sync
 
-`SyncManager` runs a background loop every **5 seconds**. It auto-syncs when:
+`SyncManager` runs a background loop every **30 seconds**. It auto-syncs when:
 - `autoSync` is enabled,
 - a host address is set,
 - a server access token is stored,

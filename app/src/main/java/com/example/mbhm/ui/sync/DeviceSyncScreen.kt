@@ -156,7 +156,7 @@ fun DeviceSyncScreen(
 
                 Toggle(
                     label = "Automatic Sync",
-                    sub = "Exchange changes every few seconds",
+                    sub = "Exchange changes every 30 seconds",
                     checked = syncState.autoSync,
                     onChange = { syncManager.setAutoSync(it) }
                 )

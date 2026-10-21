@@ -173,7 +173,7 @@ All responses include: `Cache-Control: no-store`, `X-Content-Type-Options: nosni
 - Storing the bearer token in Android Keystore (`SecureTokenStore`).
 - Sending `clientId` (persisted per device) with every push.
 - Tracking `since_version` in `SharedPreferences` for incremental pulls.
-- Auto-syncing every 5 seconds when host, token, and network are available.
+- Auto-syncing every 30 seconds when host, token, and network are available.
 
 See [SYNC.md](SYNC.md) for the full sync flow.
 

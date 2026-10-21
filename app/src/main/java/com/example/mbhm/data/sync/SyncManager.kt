@@ -151,7 +151,7 @@ class SyncManager private constructor(context: Context) {
         private const val KEY_AUTO = "auto_sync"
         private const val KEY_SINCE = "since_version"
         private const val KEY_CLIENT_ID = "client_id"
-        private const val INTERVAL_MS = 5000L
+        private const val INTERVAL_MS = 30_000L
 
         @Volatile
         private var INSTANCE: SyncManager? = null

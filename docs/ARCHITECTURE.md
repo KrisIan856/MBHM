@@ -81,7 +81,7 @@ Each entity has `toDomain()` / `fromDomain()` converters between the Room entity
 
 ## 5. Sync layer (`data/sync/`)
 
-- **`SyncManager`** — singleton orchestrator. Holds host, auto-sync flag, bearer token, and client id in `SharedPreferences` (`mbhm_sync`). Runs auto-sync every 5 seconds when host, token, and network are available and not busy. Exposes a `StateFlow<SyncState>`.
+- **`SyncManager`** — singleton orchestrator. Holds host, auto-sync flag, bearer token, and client id in `SharedPreferences` (`mbhm_sync`). Runs auto-sync every 30 seconds when host, token, and network are available and not busy. Exposes a `StateFlow<SyncState>`.
 - **`RemoteSyncClient`** — HTTP client that talks to the Node.js server (`push`, `pull`, `export`, `status`). Sends the bearer token stored in `SecureTokenStore`.
 - **`SecureTokenStore`** — stores the server access token encrypted with Android Keystore.
 - **`LocalSyncClient` / `LocalSyncServer`** — direct phone-to-phone sync over Wi-Fi using a pairing token.

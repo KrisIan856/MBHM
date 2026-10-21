@@ -89,7 +89,7 @@ Both roles can configure synchronization:
 3. Paste the server **access token** printed when the server started.
 4. Tap **Save Address** or **Sync Now**.
 
-The app stores the token encrypted using Android Keystore and syncs automatically every 5 seconds when enabled.
+The app stores the token encrypted using Android Keystore and syncs automatically every 30 seconds when enabled.
 
 ### Phone-to-phone sync
 

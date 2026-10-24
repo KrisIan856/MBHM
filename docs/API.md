@@ -2,7 +2,7 @@
 
 The sync server is a single-file Node.js HTTP server (`server/server.js`) that runs on a computer on the local network. The Android app connects to it over wireless sync to push local changes and pull remote changes.
 
-**Base URL**: `http://<computer-ip>:3000` (port configurable via `PORT` env, default `3000`)
+**Base URL**: `http://<computer-ip>:3000` (port configurable via `PORT` env, default `3000`). The Android client also accepts an `https://` reverse-proxy or Tailscale Serve address; with no explicit port it uses 443.
 
 ---
 

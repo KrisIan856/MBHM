@@ -45,17 +45,28 @@ All Room collections are synchronized:
 
 1. Install **Node.js 22.5 or newer**.
 2. Open `server/` and run `start-server.bat` (Windows) or `node server.js`.
-3. On first launch, `server/.sync-token` is created and the access token is printed. The token persists across restarts and is excluded from Git.
-4. Note the computer's IPv4 address shown in the server window.
+3. On first launch, `server/.sync-token` is created and the access token is written to that file. The token persists across restarts, is excluded from Git, and is **not printed** by the server.
+4. Note the computer's IPv4 address or Tailscale address shown in the server window.
 
 ### Connect from the app
 
 1. In MBHM, open **Wireless Sync**.
-2. Enter the server address, e.g. `http://192.168.1.42:3000`.
-3. Paste the access token under **Server Access Token**.
+2. Enter the server address, e.g. `http://192.168.1.42:3000` on the LAN, or `http://100.x.y.z:3000` over Tailscale. If you front the server with Tailscale Serve or another TLS proxy, use `https://...`; the app defaults to port 443 when no port is supplied.
+3. Open `server/.sync-token` on the computer and paste its contents under **Server Access Token**. Do not send the token through chat or email.
 4. Tap **Save Address** or **Sync Now**.
 
 The app stores the token encrypted using Android Keystore (`SecureTokenStore`) and sends it as a `Bearer` token on every request.
+
+### Rotating the sync token
+
+If a token may have been shared or archived:
+
+1. Stop the server.
+2. Replace `server/.sync-token` with a new random value. Do not reuse the old token.
+3. Restart the server.
+4. Enter the new token on every phone. Devices still using the old token receive `401` until updated.
+
+The current token was rotated on 2026-10-24. The old token must not be used.
 
 ### Server endpoints
 
@@ -78,9 +89,11 @@ The server validates with a timing-safe comparison. Unknown or missing credentia
 
 **Push** (`POST /api/push`): the client sends `clientId` and a `payload` of collections → rows. For each row:
 - If the record doesn't exist on the server, it is inserted with a new version.
-- If it exists and the client's known version is older, it's a **conflict** — the server keeps its version and does not overwrite.
-- If the data is identical, nothing changes.
+- If the data is identical to the server's current live row, nothing changes and the client's known version is acknowledged.
+- If it exists, the data differs, and the client's known version is older, it's a **conflict** — the server keeps its version and does **not** advance the client's acknowledged version. The client must pull the canonical row and push again.
 - Rows the client knows about but are missing from the push are soft-deleted on the server.
+
+This acknowledgment rule prevents a client whose pull failed from overwriting a newer server row on the next push.
 
 **Pull** (`GET /api/pull?since=`): the server returns all records with `version > since`, split into `upserts` and `deletes` per collection, plus the current server `version`. The client stores the returned version as its new `since` marker.
 
@@ -116,6 +129,8 @@ Visit `http://<computer-ip>:3000` in a browser to view the shared database. Logi
 2. Tap **Sync With Device**.
 3. Data is exchanged directly over the local Wi-Fi connection.
 
+> ⚠️ **Current limitation:** direct sync is host-authoritative for records with matching IDs. It does not perform field-level merge or preserve the joining device's edits to a record the host also changed. Back up the joining device before syncing. A safer merge policy requires a protocol change.
+
 ---
 
 ## 5. Configuration keys
@@ -135,8 +150,9 @@ The access token is stored separately in `SecureTokenStore` (Android Keystore), 
 
 ## 6. Known limitations
 
-- Both sync modes use **plain HTTP** on the local network. Authentication does **not** encrypt traffic — a person monitoring the network could capture the token or data. Use a trusted private Wi-Fi only.
-- The token protects sync endpoints but does **not** replace per-user authorization. All authenticated clients have access to the shared collections.
+- Wireless sync uses **plain HTTP by default**; direct sync also uses plain HTTP. The Android client accepts `https://` addresses, but the Node server does not terminate TLS itself. Authentication does **not** encrypt traffic — use Tailscale/WireGuard or an HTTPS reverse proxy, and avoid public Wi-Fi.
+- The token protects sync endpoints but does **not** replace per-user authorization. All authenticated clients can read the shared collections. User records, including password hashes, are part of the shared sync payload until role-scoped sync is implemented.
+- Direct sync is host-authoritative for matching record IDs and does not merge field-level edits.
 - The boarder QR is a **static account identifier**, not proof of live presence (scans are rejected outside the configured attendance window, but the QR itself is static).
 - Receipt image files are **not** transferred; only the path is shared.
 - SOS incidents are recorded locally and shared on successful sync; there is **no live push or SMS alert delivery** in this build.

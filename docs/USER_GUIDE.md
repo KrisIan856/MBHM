@@ -85,8 +85,8 @@ The Boarder shell mirrors the guardian experience from the boarder's perspective
 Both roles can configure synchronization:
 
 1. Open **Wireless Sync**.
-2. Enter the computer's IPv4 address running the MBHM sync server (e.g. `http://192.168.1.42:3000`).
-3. Paste the server **access token** printed when the server started.
+2. Enter the computer's IPv4 or Tailscale address running the MBHM sync server (e.g. `http://192.168.1.42:3000`). For an HTTPS proxy, use an `https://` address.
+3. Open `server/.sync-token` on the computer and paste the **access token** here. The server does not print it.
 4. Tap **Save Address** or **Sync Now**.
 
 The app stores the token encrypted using Android Keystore and syncs automatically every 30 seconds when enabled.
@@ -97,8 +97,9 @@ The app stores the token encrypted using Android Keystore and syncs automaticall
 - Other devices enter the host IP and token, then tap **Sync With Device**.
 - Boarders can join a host but cannot host.
 - Tap **Stop Sharing** when done; this invalidates the pairing token.
+- Direct sync is host-authoritative for matching records; back up the joining device first.
 
-> ⚠️ Sync uses plain HTTP on the local network. Use a trusted private Wi-Fi only. See [SECURITY.md](SECURITY.md).
+> ⚠️ Sync uses plain HTTP by default. Use Tailscale/WireGuard or an HTTPS proxy, and avoid public Wi-Fi. The app accepts `https://` addresses. See [SECURITY.md](SECURITY.md).
 
 ---
 
@@ -123,8 +124,8 @@ The app stores the token encrypted using Android Keystore and syncs automaticall
 ## 6. Important limitations
 
 - This is a **student/demo build**, not a production deployment.
-- Sync traffic is **not encrypted** (plain HTTP). Do not use on public Wi-Fi.
-- The sync token is **not per-user authorization** — all authenticated clients see shared collections.
+- Sync traffic is **not encrypted by the Node server** (plain HTTP by default). Use Tailscale/WireGuard or an HTTPS proxy; do not use public Wi-Fi.
+- The sync token is **not per-user authorization** — all authenticated clients see shared collections, including account records.
 - The boarder QR is a **static account identifier**, not live-presence proof.
 - Receipt image files stay on the submitting device; only the path is synced.
 - SOS incidents are recorded and shared on sync, but there is **no live SMS/push alert**.

@@ -59,19 +59,19 @@ The sync server is a small Node.js HTTP server in the `server/` folder. It expos
 
 1. Install **Node.js 22.5 or newer**.
 2. Open the `server` folder and double-click `start-server.bat` (or run `node server.js`).
-3. On first launch, the script creates `server/.sync-token`, prints the access token, and starts the server on port 3000. Keep the token private — it persists across restarts and is excluded from Git.
-4. Find the computer's IPv4 address in the server window.
+3. On first launch, the script creates `server/.sync-token` and starts the server on port 3000. The token is **not printed**; open the file locally when pairing a phone. Keep it private — it persists across restarts and is excluded from Git.
+4. Find the computer's IPv4 or Tailscale address in the server window.
 5. Open a browser at `http://<computer-ip>:3000` for the shared-database dashboard. Login is username `mbhm` with the access token as the password.
 
-If the token is lost, stop the server, delete `server/.sync-token`, and restart `start-server.bat` to generate a new one. Enter the new token on each phone.
+If the token is exposed or lost, stop the server, replace `server/.sync-token` with a new random value, restart, and enter the new token on each phone. Do not reuse the old token.
 
 ---
 
 ## 4. Connect the app to the server
 
 1. In MBHM, open **Wireless Sync**.
-2. Under **Server Address**, enter the computer's IPv4 address (e.g. `http://192.168.1.42:3000`).
-3. Under **Server Access Token**, paste the access token printed by the server.
+2. Under **Server Address**, enter the computer's IPv4 or Tailscale address (e.g. `http://192.168.1.42:3000`). If you use Tailscale Serve or another TLS proxy, enter an `https://` address; the app defaults to port 443 when no port is given.
+3. Under **Server Access Token**, paste the contents of `server/.sync-token` from the computer.
 4. Tap **Save Address** or **Sync Now**.
 
 The app stores the token encrypted using Android Keystore and sends it as a Bearer token on each request.

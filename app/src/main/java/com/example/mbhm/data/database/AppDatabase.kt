@@ -32,7 +32,7 @@ import com.example.mbhm.data.entity.*
         GuardianProfileEntity::class
     ],
     version = 9,
-    exportSchema = false
+    exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -203,7 +203,10 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_7_8,
                         MIGRATION_8_9
                     )
-                    .fallbackToDestructiveMigration()
+                    // Versions 1-3 predate the migrations kept below. Only those legacy
+                    // versions may be recreated; a missing migration from 4 onward fails
+                    // loudly instead of silently deleting local records.
+                    .fallbackToDestructiveMigrationFrom(true, 1, 2, 3)
                     .build()
                 INSTANCE = instance
                 instance

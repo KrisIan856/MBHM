@@ -120,7 +120,7 @@ fun BoarderApp(
         scope.launch { appRepository.updateBoarder(b) }
     }
 
-    fun sendSos() {
+    fun sendSos(onRecorded: () -> Unit = {}) {
         val id = boarderId ?: return
         scope.launch {
             appRepository.insertIncident(
@@ -134,6 +134,7 @@ fun BoarderApp(
                     resolved = false
                 )
             )
+            onRecorded()
         }
     }
 
@@ -241,7 +242,7 @@ fun BHome(
     leaveNotices: List<LeaveNotice>,
     onNavigate: (tab: String, screen: String?) -> Unit,
     onAnnouncements: () -> Unit,
-    onSendSos: () -> Unit,
+    onSendSos: (onRecorded: () -> Unit) -> Unit,
     showToast: (String) -> Unit
 ) {
     val myAnn = announcements.filter { a -> a.isFor(boarder.id) }
@@ -717,7 +718,7 @@ Text(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    "Tap to alert guardian immediately",
+                    "Records SOS; shared on next sync",
                     color = C.danger,
                     fontSize = 12.sp,
                     modifier = Modifier.padding(top = 2.dp)
@@ -778,7 +779,7 @@ Text(
         Modal(
             open = showSosConfirm,
             onClose = { showSosConfirm = false },
-            title = "Send Emergency SOS?"
+            title = "Record Emergency SOS?"
         ) {
             Column(
                 Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -786,7 +787,7 @@ Text(
             ) {
                 Text("🆘", fontSize = 56.sp)
                 Text(
-                    "This will immediately alert the house guardian of an emergency. Only use in genuine emergency situations.",
+                    "This records an SOS incident on this phone. It is shared with the guardian only after a successful sync. It does not contact emergency services or notify the guardian immediately.",
                     color = C.muted,
                     fontSize = 14.sp,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -797,10 +798,11 @@ Text(
                 onCancel = { showSosConfirm = false },
                 onConfirm = {
                     showSosConfirm = false
-                    onSendSos()
-                    showToast("🆘 SOS alert sent! Guardian has been notified.")
+                    onSendSos {
+                        showToast("🆘 SOS recorded on this phone — not yet delivered to the guardian")
+                    }
                 },
-                confirmLabel = "Send SOS Alert",
+                confirmLabel = "Record SOS",
                 confirmDanger = true
             )
         }

@@ -293,13 +293,9 @@ records = attnRecords,
                 val presentToday = attnRecords.count {
                     it.sessionId in todaySessionIds && it.status == AttendanceStatus.PRESENT
                 }
-                val monthPaid = payments.filter { it.period == monthLabel }.sumOf { p ->
-                    when (p.status) {
-                        PayStatus.PAID -> p.amountPaid ?: p.amount
-                        PayStatus.PARTIAL -> p.amountPaid ?: 0
-                        else -> 0
-                    }
-                }
+                val monthPaid = payments
+                    .filter { it.period == monthLabel }
+                    .sumOf { it.paidAmount() }
                 val monthDue = boarders.sumOf { it.monthlyRate }
                 val pendingReceipts = payments.count { it.receiptStatus == ReceiptStatus.PENDING_REVIEW }
 
@@ -691,13 +687,24 @@ fun GDashboard(
     val today = remember { java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.ENGLISH).format(java.util.Date()) }
     val todaySessionIds = sessions.filter { it.date == today }.map { it.id }.toSet()
     val sepPay = payments.filter { it.period == monthLabel }
-    val paid = sepPay.count { it.status == PayStatus.PAID }
-    val partial = sepPay.count { it.status == PayStatus.PARTIAL }
-    val pending = sepPay.count { it.status == PayStatus.PENDING }
-    val overdue = sepPay.count { it.status == PayStatus.OVERDUE }
+    val paid = sepPay.count { it.amount > 0 && it.paidAmount() >= it.amount }
+    val partial = sepPay.count { it.paidAmount() in 1 until it.amount }
+    val pending = sepPay.count { it.paidAmount() == 0 && it.status == PayStatus.PENDING }
+    val overdue = sepPay.count { it.paidAmount() == 0 && it.status == PayStatus.OVERDUE }
+    val awaitingVerification = sepPay.count {
+        it.paidAmount() == 0 &&
+            it.receiptStatus == ReceiptStatus.PENDING_REVIEW &&
+            it.status != PayStatus.PENDING &&
+            it.status != PayStatus.OVERDUE
+    }
+    val actionNeeded = pending + overdue + awaitingVerification
     val present = attnRecords.count { it.sessionId in todaySessionIds && it.status == AttendanceStatus.PRESENT }
-    val fullCollected = sepPay.filter { it.status == PayStatus.PAID }.sumOf { it.amount }
-    val partialCollected = sepPay.filter { it.status == PayStatus.PARTIAL }.sumOf { it.amountPaid ?: 0 }
+    val fullCollected = sepPay
+        .filter { it.amount > 0 && it.paidAmount() >= it.amount }
+        .sumOf { it.paidAmount() }
+    val partialCollected = sepPay
+        .filter { it.paidAmount() in 1 until it.amount }
+        .sumOf { it.paidAmount() }
     val collected = fullCollected + partialCollected
     val totalExpected = boarders.sumOf { it.monthlyRate }
     val guardianSubtitle = if (houseName.isBlank()) guardianName else "$guardianName · $houseName"
@@ -764,8 +771,11 @@ fun GDashboard(
             )
             StatCard(
                 label = "Action Needed",
-                value = pending + overdue,
-                sub = "$overdue overdue · $pending pending",
+                value = actionNeeded,
+                sub = buildString {
+                    append("$overdue overdue · $pending pending")
+                    if (awaitingVerification > 0) append(" · $awaitingVerification to verify")
+                },
                 bg = C.warnLt,
                 textColor = C.warn,
                 modifier = Modifier.weight(1f)
@@ -807,7 +817,7 @@ fun GDashboard(
             }
             dashCollectionBar(fullCollected, partialCollected, totalExpected)
             Text(
-                "${paid} fully paid · ${partial} partial · ${pending + overdue} outstanding",
+                "${paid} fully paid · ${partial} partial · ${actionNeeded} need attention",
                 color = C.muted,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(top = 8.dp)

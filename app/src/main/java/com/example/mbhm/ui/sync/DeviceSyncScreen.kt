@@ -203,6 +203,12 @@ fun DeviceSyncScreen(
         }
 
         SectionHeader(title = "Direct Device Sync (no computer)")
+        Text(
+            "Direct sync replaces records with the same ID using the host's copy. Back up the joining device before syncing.",
+            color = C.warn,
+            fontSize = 12.sp,
+            lineHeight = 17.sp
+        )
         PCard {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (allowHosting) {

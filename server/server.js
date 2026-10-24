@@ -160,72 +160,87 @@ function handlePush(body) {
     const payload = (body && body.payload) || {};
     let changes = 0;
     let conflicts = 0;
+    const versionBefore = version;
 
-    for (const [collection, cfg] of Object.entries(COLLECTIONS)) {
-        if (!Object.prototype.hasOwnProperty.call(payload, collection)) continue;
-        const rows = Array.isArray(payload[collection]) ? payload[collection] : [];
-        const known = new Map();
-        for (const prev of stmt.clientRowsAll.all(clientId, collection)) {
-            known.set(prev.record_id, prev.known_version);
-        }
-
-        const incomingIds = new Set();
-        const nextKnown = new Map();
-
-        for (const row of rows) {
-            if (!row || row[cfg.pk] == null) continue;
-            const id = String(row[cfg.pk]);
-            incomingIds.add(id);
-            const json = JSON.stringify(row);
-            const seen = known.get(id) || 0;
-            const existing = stmt.recordGet.get(collection, id);
-
-            if (!existing) {
-                const inserted = bump();
-                stmt.recordInsert.run(collection, id, json, inserted, 0);
-                nextKnown.set(id, inserted);
-                changes++;
-                continue;
+    db.exec('BEGIN IMMEDIATE');
+    try {
+        for (const [collection, cfg] of Object.entries(COLLECTIONS)) {
+            if (!Object.prototype.hasOwnProperty.call(payload, collection)) continue;
+            const rows = Array.isArray(payload[collection]) ? payload[collection] : [];
+            const known = new Map();
+            for (const prev of stmt.clientRowsAll.all(clientId, collection)) {
+                known.set(prev.record_id, prev.known_version);
             }
 
-            if (existing.version > seen) {
-                nextKnown.set(id, existing.version);
-                conflicts++;
-                continue;
-            }
+            const incomingIds = new Set();
+            const nextKnown = new Map();
 
-            if (existing.data === json && existing.deleted === 0) {
-                nextKnown.set(id, existing.version);
-                continue;
-            }
+            for (const row of rows) {
+                if (!row || row[cfg.pk] == null) continue;
+                const id = String(row[cfg.pk]);
+                incomingIds.add(id);
+                const json = JSON.stringify(row);
+                const seen = known.get(id) || 0;
+                const existing = stmt.recordGet.get(collection, id);
 
-            const updated = bump();
-            stmt.recordUpdate.run(json, updated, 0, collection, id);
-            nextKnown.set(id, updated);
-            changes++;
-        }
+                if (!existing) {
+                    const inserted = bump();
+                    stmt.recordInsert.run(collection, id, json, inserted, 0);
+                    nextKnown.set(id, inserted);
+                    changes++;
+                    continue;
+                }
 
-        for (const [id, seen] of known) {
-            if (incomingIds.has(id)) continue;
-            const existing = stmt.recordGet.get(collection, id);
-            if (!existing) continue;
-            let current = existing.version;
-            if (existing.deleted === 0) {
-                current = bump();
-                stmt.recordUpdate.run(existing.data, current, 1, collection, id);
+                if (existing.data === json && existing.deleted === 0) {
+                    nextKnown.set(id, existing.version);
+                    continue;
+                }
+
+                if (existing.version > seen) {
+                    // Do not acknowledge this row until the client sends the canonical
+                    // data after a successful pull. Advancing it here lets a stale
+                    // client overwrite a newer server record after a failed download.
+                    conflicts++;
+                    continue;
+                }
+
+                const updated = bump();
+                stmt.recordUpdate.run(json, updated, 0, collection, id);
+                nextKnown.set(id, updated);
                 changes++;
             }
-            nextKnown.set(id, Math.max(seen, current));
+
+            for (const [id, seen] of known) {
+                if (incomingIds.has(id)) continue;
+                const existing = stmt.recordGet.get(collection, id);
+                if (!existing) continue;
+                let current = existing.version;
+                if (existing.deleted === 0) {
+                    current = bump();
+                    stmt.recordUpdate.run(existing.data, current, 1, collection, id);
+                    changes++;
+                }
+                nextKnown.set(id, Math.max(seen, current));
+            }
+
+            stmt.clientRowsDelete.run(clientId, collection);
+            for (const [id, seen] of nextKnown) {
+                stmt.clientRowsInsert.run(clientId, collection, id, seen);
+            }
         }
 
-        stmt.clientRowsDelete.run(clientId, collection);
-        for (const [id, seen] of nextKnown) {
-            stmt.clientRowsInsert.run(clientId, collection, id, seen);
+        saveVersion();
+        db.exec('COMMIT');
+        return { ok: true, version, changes, conflicts };
+    } catch (err) {
+        try {
+            db.exec('ROLLBACK');
+        } catch (_) {
+            // Preserve the original error.
         }
+        version = versionBefore;
+        throw err;
     }
-
-    saveVersion();
-    return { ok: true, version, changes, conflicts };
 }
 
 function handlePull(sinceRaw) {
@@ -477,7 +492,7 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log(`  database : ${DB_FILE}`);
     console.log(`  dashboard: http://localhost:${PORT}/`);
     console.log(`  username : mbhm`);
-    console.log(`  token    : ${ACCESS_TOKEN}`);
+    console.log(`  token    : configured`);
     console.log(`  token file: ${TOKEN_FILE}`);
     for (const ip of lanAddresses()) {
         console.log(`  devices  : http://${ip}:${PORT}`);

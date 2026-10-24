@@ -28,18 +28,18 @@ This copy includes a visual refresh across the shared Android interface and both
 - Added a Guardian **Boarders** tab that combines the roster (room assignments, contact details, current-month payment standing, and search) with boarder account creation, room/job edits, and password resets. Boarder management was moved out of **Security & Emergency**.
 - Corrected SOS confirmation copy: the app records an SOS incident and shares it after successful sync; it does not falsely claim to send an instant SMS/push notification.
 - Disabled Android app backup to reduce accidental exposure of local management records and secrets.
-- Excluded the local server database and token, Gradle caches, and build output from this source archive.
+- The repository `.gitignore` excludes the local server database, token, Gradle/IDE caches, build output, and `local.properties`. Create source archives from Git-tracked files only (for example, `git archive`) and inspect the ZIP before sharing.
 
 ## Computer sync server setup (Windows)
 
 1. Install **Node.js 22.5 or newer**.
 2. Open the `server` folder and double-click `start-server.bat`.
-3. On first launch, the script creates `server/.sync-token`, prints the access token, and starts the server. Keep the token private. The file persists the same token across restarts and is excluded from Git.
-4. Find the computer's IPv4 address in the server window.
-5. In MBHM, open **Wireless Sync**. Enter that IP under **Server Address**, paste the printed token under **Server Access Token**, then tap **Save Address** or **Sync Now**.
+3. On first launch, the script creates `server/.sync-token` and starts the server. The token is **not printed**. Open `server/.sync-token` locally when pairing a phone. Keep it private; it persists across restarts and is excluded from Git.
+4. Find the computer's IPv4 or Tailscale address in the server window.
+5. In MBHM, open **Wireless Sync**. Enter that address under **Server Address**, paste the token from `server/.sync-token` under **Server Access Token**, then tap **Save Address** or **Sync Now**.
 6. To open the dashboard in a browser, visit `http://<computer-ip>:3000`. When prompted, use username `mbhm` and the access token as the password.
 
-If the token is lost, stop the server, delete `server/.sync-token`, and restart `start-server.bat` to generate a new one. Enter the new token on each phone.
+If the token is exposed or lost, stop the server, replace `server/.sync-token` with a new random value, restart, and enter the new token on each phone. Do not reuse the old token.
 
 ## Direct phone-to-phone sync
 
@@ -48,11 +48,13 @@ If the token is lost, stop the server, delete `server/.sync-token`, and restart 
 3. On the other phone, enter the host IP and token, then tap **Sync With Device**.
 4. Tap **Stop Sharing** when finished. The pairing token is invalidated when sharing stops.
 
+> ⚠️ Direct sync is host-authoritative for records with matching IDs. Back up the joining device first; field-level merge is not implemented.
+
 ## Important security limitations
 
-This is a student/demo build, not a production deployment. Both sync modes currently use plain HTTP on a local network; **authentication does not encrypt network traffic**, so a person able to monitor that network could capture a token or data. Use a trusted private Wi-Fi network only, keep the ports off the public internet, and do not use real sensitive records until HTTPS/TLS, access controls by account/house, and a full security review are in place. Restrict any Windows Firewall allowance to a private network. Avoid public Wi-Fi.
+This is a student/demo build, not a production deployment. Wireless sync uses plain HTTP by default; direct sync also uses plain HTTP. The Android client accepts `https://` addresses (default port 443), but the Node server does not terminate TLS itself. **Authentication does not encrypt network traffic**, so use Tailscale/WireGuard or an HTTPS reverse proxy, and keep the ports off the public internet. Do not use real sensitive records until HTTPS/TLS, access controls by account/house, and a full security review are in place. Restrict any Windows Firewall allowance to a private network. Avoid public Wi-Fi.
 
-The token protects the sync server endpoints; it does not replace per-user authorization. All authenticated server clients currently have access to the shared collections. The boarder QR is still a static account identifier, so it should not be treated as proof of live presence, even though scans are now rejected outside the configured window. Receipt image files stay on the submitting device and are not transferred by database sync; only the stored path is shared. SOS incidents are recorded locally and shared on successful sync; there is no live push/SMS alert delivery in this build. Use unique, non-demo data while developing.
+The token protects the sync server endpoints; it does not replace per-user authorization. All authenticated server clients currently have access to the shared collections, including user records and password hashes, until role-scoped sync is implemented. The boarder QR is still a static account identifier, so it should not be treated as proof of live presence, even though scans are now rejected outside the configured window. Receipt image files stay on the submitting device and are not transferred by database sync; only the stored path is shared. SOS incidents are recorded locally and shared on successful sync; there is no live push/SMS alert delivery in this build. Use unique, non-demo data while developing.
 
 ## Build and run the Android app
 
@@ -60,7 +62,7 @@ The token protects the sync server endpoints; it does not replace per-user autho
 2. Allow Gradle sync and install the Android SDK/platform required by `app/build.gradle.kts` (`compileSdk` 37 in this project).
 3. Select the `app` run configuration and deploy to a device/emulator.
 
-The source archive does not include `local.properties`, Gradle caches, or generated build output. Run `./gradlew :app:assembleDebug` (or build from Android Studio) and test on an emulator/device before distributing the APK.
+Run `./gradlew :app:assembleDebug` (or build from Android Studio) and test on an emulator/device before distributing the APK. Room schema snapshots are written to `app/schemas/`; commit them when the schema changes. Run `cd server; npm test` for the sync regression tests. Use `scripts/package-source.ps1` to create a clean source ZIP from Git HEAD; it excludes IDE/Gradle state, build output, `local.properties`, `server/.sync-token`, and server database files.
 
 ## Documentation
 

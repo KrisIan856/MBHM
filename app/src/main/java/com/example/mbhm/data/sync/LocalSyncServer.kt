@@ -82,10 +82,16 @@ class LocalSyncServer(
     private fun handleClient(socket: Socket) {
         scope.launch {
             try {
+                socket.soTimeout = SOCKET_TIMEOUT_MS
                 val input = socket.getInputStream().buffered()
                 val output = socket.getOutputStream()
 
-                val requestLine = readAsciiLine(input) ?: run {
+                val requestLine = try {
+                    readAsciiLine(input, MAX_LINE)
+                } catch (_: RequestTooLargeException) {
+                    sendResponse(output, 431, "Request Header Fields Too Large")
+                    return@launch
+                } ?: run {
                     socket.close()
                     return@launch
                 }
@@ -97,7 +103,12 @@ class LocalSyncServer(
 
                 val method = parts[0]
                 val path = parts[1].substringBefore('?')
-                val headers = readHeaders(input)
+                val headers = try {
+                    readHeaders(input)
+                } catch (_: RequestTooLargeException) {
+                    sendResponse(output, 431, "Request Header Fields Too Large")
+                    return@launch
+                }
 
                 val expectedToken = pairingToken
                 val suppliedToken = headers["x-pairing-token"]
@@ -116,7 +127,12 @@ class LocalSyncServer(
                     return@launch
                 }
                 val body = if (contentLength > 0) {
-                    String(input.readNBytes(contentLength), StandardCharsets.UTF_8)
+                    val bytes = input.readNBytes(contentLength)
+                    if (bytes.size != contentLength) {
+                        sendResponse(output, 400, "Incomplete Request Body")
+                        return@launch
+                    }
+                    String(bytes, StandardCharsets.UTF_8)
                 } else {
                     ""
                 }
@@ -172,8 +188,15 @@ class LocalSyncServer(
 
     private fun readHeaders(input: InputStream): Map<String, String> {
         val headers = mutableMapOf<String, String>()
+        var totalBytes = 0
+        var lineCount = 0
         while (true) {
-            val line = readAsciiLine(input) ?: break
+            val line = readAsciiLine(input, MAX_LINE) ?: break
+            totalBytes += line.length + 2
+            lineCount++
+            if (totalBytes > MAX_HEADER_BYTES || lineCount > MAX_HEADER_COUNT) {
+                throw RequestTooLargeException()
+            }
             if (line.isEmpty()) break
             val separator = line.indexOf(':')
             if (separator > 0) {
@@ -184,9 +207,10 @@ class LocalSyncServer(
         return headers
     }
 
-    private fun readAsciiLine(input: InputStream): String? {
+    private fun readAsciiLine(input: InputStream, maxBytes: Int): String? {
         val buffer = ByteArrayOutputStream()
         while (true) {
+            if (buffer.size() >= maxBytes) throw RequestTooLargeException()
             val byte = input.read()
             if (byte == -1) {
                 return if (buffer.size() == 0) null else buffer.toString(StandardCharsets.UTF_8.name())
@@ -203,6 +227,8 @@ class LocalSyncServer(
             buffer.write(byte)
         }
     }
+
+    private class RequestTooLargeException : Exception()
 
     private fun constantTimeEquals(left: String?, right: String): Boolean {
         if (left == null) return false
@@ -253,11 +279,16 @@ class LocalSyncServer(
         401 -> "Unauthorized"
         404 -> "Not Found"
         413 -> "Payload Too Large"
+        431 -> "Request Header Fields Too Large"
         else -> "Error"
     }
 
     private companion object {
         const val TAG = "LocalSyncServer"
         const val MAX_BODY = 8 * 1024 * 1024
+        const val SOCKET_TIMEOUT_MS = 10_000
+        const val MAX_LINE = 8 * 1024
+        const val MAX_HEADER_BYTES = 32 * 1024
+        const val MAX_HEADER_COUNT = 100
     }
 }

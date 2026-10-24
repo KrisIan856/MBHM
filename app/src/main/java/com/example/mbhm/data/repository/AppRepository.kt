@@ -46,7 +46,7 @@ class AppRepository private constructor(context: Context) {
     }
 
     private fun passwordError(password: String): String? = when {
-        password.length < 6 -> "Password must be at least 6 characters"
+        password.length < 10 -> "Password must be at least 10 characters"
         !(password.any { it.isUpperCase() } && password.any { it.isLowerCase() }) ->
             "Password must contain uppercase and lowercase letters"
         !password.any { it.isDigit() } -> "Password must contain at least one number"
@@ -612,7 +612,7 @@ class AppRepository private constructor(context: Context) {
         guardianProfile = db.guardianProfileDao().get()?.let { listOf(it) } ?: emptyList()
     )
 
-    suspend fun importSyncPayload(payload: SyncPayload): Int {
+    suspend fun importSyncPayload(payload: SyncPayload): Int = db.withTransaction {
         var imported = 0
 
         val users = payload.users.orEmpty()
@@ -681,26 +681,28 @@ class AppRepository private constructor(context: Context) {
             db.jobDao().insertAll(jobs); imported += jobs.size
         }
 
-        return imported
+        imported
     }
 
     suspend fun deleteSyncedRecords(deletes: Map<String, List<String>>?) {
         deletes ?: return
-        deletes["users"]?.forEach { db.userDao().deleteById(it) }
-        deletes["boarders"]?.forEach { db.boarderDao().deleteById(it) }
-        deletes["paymentRecords"]?.forEach { db.paymentRecordDao().deleteById(it) }
-        deletes["attendanceSessions"]?.forEach { db.attendanceSessionDao().deleteById(it) }
-        deletes["attendanceRecords"]?.forEach { db.attendanceRecordDao().deleteById(it) }
-        deletes["announcements"]?.forEach { db.announcementDao().deleteById(it) }
-        deletes["visitorEntries"]?.forEach { db.visitorEntryDao().deleteById(it) }
-        deletes["incidents"]?.forEach { db.incidentDao().deleteById(it) }
-        deletes["maintenanceReports"]?.forEach { db.maintenanceReportDao().deleteById(it) }
-        deletes["curfewRecords"]?.forEach { db.curfewRecordDao().deleteById(it) }
-        deletes["worshipSchedules"]?.forEach { db.worshipScheduleDao().deleteById(it) }
-        deletes["billingSettings"]?.forEach { db.billingSettingsDao().deleteById(it) }
-        deletes["leaveNotices"]?.forEach { db.leaveNoticeDao().deleteById(it) }
-        deletes["absenceAlerts"]?.forEach { db.absenceAlertDao().deleteById(it) }
-        deletes["rooms"]?.forEach { db.roomDao().deleteByName(it) }
-        deletes["jobs"]?.forEach { db.jobDao().deleteByName(it) }
+        db.withTransaction {
+            deletes["users"]?.forEach { db.userDao().deleteById(it) }
+            deletes["boarders"]?.forEach { db.boarderDao().deleteById(it) }
+            deletes["paymentRecords"]?.forEach { db.paymentRecordDao().deleteById(it) }
+            deletes["attendanceSessions"]?.forEach { db.attendanceSessionDao().deleteById(it) }
+            deletes["attendanceRecords"]?.forEach { db.attendanceRecordDao().deleteById(it) }
+            deletes["announcements"]?.forEach { db.announcementDao().deleteById(it) }
+            deletes["visitorEntries"]?.forEach { db.visitorEntryDao().deleteById(it) }
+            deletes["incidents"]?.forEach { db.incidentDao().deleteById(it) }
+            deletes["maintenanceReports"]?.forEach { db.maintenanceReportDao().deleteById(it) }
+            deletes["curfewRecords"]?.forEach { db.curfewRecordDao().deleteById(it) }
+            deletes["worshipSchedules"]?.forEach { db.worshipScheduleDao().deleteById(it) }
+            deletes["billingSettings"]?.forEach { db.billingSettingsDao().deleteById(it) }
+            deletes["leaveNotices"]?.forEach { db.leaveNoticeDao().deleteById(it) }
+            deletes["absenceAlerts"]?.forEach { db.absenceAlertDao().deleteById(it) }
+            deletes["rooms"]?.forEach { db.roomDao().deleteByName(it) }
+            deletes["jobs"]?.forEach { db.jobDao().deleteByName(it) }
+        }
     }
 }

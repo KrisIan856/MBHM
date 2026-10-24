@@ -19,13 +19,18 @@ class RemoteSyncClient(
     private val gson = Gson()
 
     fun baseUrl(host: String): String {
-        val cleaned = host.trim()
-            .removePrefix("http://")
-            .removePrefix("https://")
-            .trimEnd('/')
+        val trimmed = host.trim().trimEnd('/')
+        if (trimmed.isEmpty()) return ""
+        val scheme = if (trimmed.startsWith("https://", ignoreCase = true)) "https" else "http"
+        val cleaned = if (trimmed.contains("://")) trimmed.substringAfter("://") else trimmed
         if (cleaned.isEmpty()) return ""
-        val withPort = if (cleaned.count { it == ':' } == 0) "$cleaned:$defaultPort" else cleaned
-        return "http://$withPort"
+        val port = if (cleaned.count { it == ':' } == 0) {
+            if (scheme == "https") 443 else defaultPort
+        } else {
+            null
+        }
+        val withPort = if (port == null) cleaned else "$cleaned:$port"
+        return "$scheme://$withPort"
     }
 
     suspend fun status(host: String, token: String): ServerStatusResponse? = withContext(Dispatchers.IO) {
@@ -105,9 +110,10 @@ class RemoteSyncClient(
                 appRepository.deleteSyncedRecords(deletes)
             }
 
+            val displayHost = base.removePrefix("https://").removePrefix("http://")
             RemoteSyncOutcome(
                 success = true,
-                message = "Synced with ${base.removePrefix("http://")}",
+                message = "Synced with $displayHost",
                 sent = sent,
                 received = received,
                 removed = removed,
@@ -159,6 +165,7 @@ private fun SyncPayload.totalRecords(): Int =
         worshipSchedules.orEmpty().size +
         billingSettings.orEmpty().size +
         leaveNotices.orEmpty().size +
+        absenceAlerts.orEmpty().size +
         rooms.orEmpty().size +
         jobs.orEmpty().size +
         guardianProfile.orEmpty().size

@@ -61,7 +61,7 @@ fun BSecurity(
     maintenance: List<MaintenanceReport>,
     setMaintenance: (List<MaintenanceReport>) -> Unit,
     onBoarderUpdate: (Boarder) -> Unit,
-    onSendSos: () -> Unit,
+    onSendSos: (onRecorded: () -> Unit) -> Unit,
     showToast: (String) -> Unit
 ) {
     var screen by remember(startScreen) { mutableStateOf(startScreen) }
@@ -123,7 +123,7 @@ fun BSecurity(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            "Tap to send instant alert to guardian",
+                            "Records SOS; shared on next sync",
                             color = C.danger,
                             fontSize = 14.sp,
                             modifier = Modifier.padding(top = 2.dp)
@@ -160,7 +160,7 @@ fun BSecurity(
             }
         }
 
-        Modal(open = sosModal, onClose = { sosModal = false }, title = "Send Emergency SOS?") {
+        Modal(open = sosModal, onClose = { sosModal = false }, title = "Record Emergency SOS?") {
             Column(
                 Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -184,10 +184,11 @@ fun BSecurity(
                 onCancel = { sosModal = false },
                 onConfirm = {
                     sosModal = false
-                    onSendSos()
-                    showToast("🆘 SOS recorded — it will be shared on the next successful sync")
+                    onSendSos {
+                        showToast("🆘 SOS recorded on this phone — not yet delivered to the guardian")
+                    }
                 },
-                confirmLabel = "Send SOS Alert",
+                confirmLabel = "Record SOS",
                 confirmDanger = true
             )
         }

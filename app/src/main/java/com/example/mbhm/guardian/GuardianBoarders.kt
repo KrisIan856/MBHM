@@ -718,7 +718,7 @@ private fun DirectoryField(
 }
 
 private fun passwordError(password: String): String? = when {
-    password.length < 6 -> "Password must be at least 6 characters"
+    password.length < 10 -> "Password must be at least 10 characters"
     !password.any { it.isUpperCase() } || !password.any { it.isLowerCase() } ->
         "Password must contain uppercase and lowercase letters"
     !password.any { it.isDigit() } -> "Password must contain at least one number"
